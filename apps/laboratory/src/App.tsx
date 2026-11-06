@@ -510,7 +510,14 @@ function WorkspaceApp() {
                 hidden={section !== "memory"}
                 aria-label="Character memory"
               >
-                <EvidencePanel snapshot={snapshot} />
+                <EvidencePanel
+                  snapshot={snapshot}
+                  disabled={Boolean(pending) || characterBusy}
+                  onMemoryImported={async (id) => {
+                    setCharacters(await api<CharacterSummary[]>("characters"));
+                    await chooseCharacter(id, id);
+                  }}
+                />
               </section>
               {laboratoryAvailable && section === "laboratory" && (
                 <section
@@ -530,7 +537,17 @@ function WorkspaceApp() {
                     ready={ready}
                     onPlan={() => void run("plan")}
                   />
-                  <EvidencePanel snapshot={snapshot} debug />
+                  <EvidencePanel
+                    snapshot={snapshot}
+                    debug
+                    disabled={Boolean(pending) || characterBusy}
+                    onMemoryImported={async (id) => {
+                      setCharacters(
+                        await api<CharacterSummary[]>("characters"),
+                      );
+                      await chooseCharacter(id, id);
+                    }}
+                  />
                 </section>
               )}
             </>

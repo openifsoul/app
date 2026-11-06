@@ -54,7 +54,7 @@ export function character(): CharacterInstance & {
     profile: {
       name: "Lumen Reed",
       description:
-        "An original synthetic character used only by the local laboratory.",
+        "An original starter character shared by the App and local laboratory.",
       traits: { careful: true },
       preferences: [],
       speechStyle: {

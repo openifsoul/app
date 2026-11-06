@@ -15,3 +15,11 @@ build, CI, schedules, publication or deploy without explicit owner authorization
 Use CodeGraph first only when .codegraph exists. Browser tests are headless with
 unique owned sessions, 300000 ms idle timeout when supported and explicit cleanup.
 Never close user browsers or another task's session.
+
+## Authorized release on 2026-11-06
+
+The owner authorized preparation, reviewed Git commits/pushes, and manual production
+publication through private Cloud after coordinator review and local gates. This
+supersedes the split-only deployment restriction for this release. Checks and builds
+remain local; no npm publication, automatic remote execution, settings changes,
+secret operation or data migration is authorized. A Git push does not deploy.

@@ -1,3 +1,5 @@
+import type { BridgeRequest, BridgeResponse } from "./bridge.js";
+import type { ProviderSelection } from "@ifsoul/core/model-providers/types";
 import { appConfig, trustedLocalRequest } from "./app-auth.js";
 import {
   CHARACTER_LIBRARY,
@@ -41,6 +43,11 @@ export interface APIOptions {
   service: LabService | CharacterWorkspace;
   providers(): Promise<ProviderOption[]>;
   now?: () => number;
+  observeBridge?: (body: BridgeRequest) => void;
+  bridge?: (
+    body: BridgeRequest,
+    selection: ProviderSelection,
+  ) => Promise<BridgeResponse>;
   demo?: (request: Request) => Promise<Response>;
 }
 const error = (code: string, message: string, status = 400) =>
@@ -150,6 +157,60 @@ export function createAPI(options: APIOptions) {
         providers: auth ? await options.providers() : [],
       });
     if (!auth) return error("unauthorized", "Sign in to continue.", 401);
+    if (
+      path === "/api/bridge/observations" &&
+      request.method === "POST" &&
+      options.observeBridge
+    ) {
+      const body = await boundedJSON(request);
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        return error("invalid-request", "Enter a bounded bridge request.");
+      options.observeBridge(body as BridgeRequest);
+      return Response.json({ ok: true });
+    }
+    if (path === "/api/bridge" && request.method === "POST" && options.bridge) {
+      if (busy)
+        return error(
+          "busy",
+          "An operation is already running. Wait for its result.",
+          409,
+        );
+      const providerId = url.searchParams.get("provider"),
+        model = url.searchParams.get("model");
+      const provider = (await options.providers()).find(
+        (p) => p.id === providerId,
+      );
+      if (
+        !provider?.available ||
+        provider.id === "scenario" ||
+        !model ||
+        !provider.models.some((m) => m.id === model)
+      )
+        return error(
+          "unavailable",
+          "Choose an available model using provider and model URL parameters.",
+        );
+      const body = await boundedJSON(request);
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        return error("invalid-request", "Enter a bounded bridge request.");
+      if (busy)
+        return error(
+          "busy",
+          "An operation is already running. Wait for its result.",
+          409,
+        );
+      busy = true;
+      try {
+        return Response.json(
+          await options.bridge(body as BridgeRequest, {
+            provider: provider.id as ProviderSelection["provider"],
+            model,
+          }),
+        );
+      } finally {
+        busy = false;
+      }
+    }
     if (path === "/api/logout" && request.method === "POST")
       return Response.json(
         { ok: true },
@@ -183,6 +244,42 @@ export function createAPI(options: APIOptions) {
       }
     }
     if ("listCharacters" in options.service) {
+      if (path === "/api/memory/export" && request.method === "GET") {
+        const result = options.service.exportMemory(
+          url.searchParams.get("memoryId") ?? "",
+        );
+        return Response.json(result, {
+          status: result.ok ? 200 : 400,
+          headers: { "Cache-Control": "no-store" },
+        });
+      }
+      if (
+        [
+          "/api/memory/preview",
+          "/api/memory/import",
+          "/api/memory/new",
+        ].includes(path) &&
+        request.method === "POST"
+      ) {
+        if (busy) return error("busy", "Wait for the current operation.", 409);
+        const body = (await boundedJSON(request, 2_010_000)) as Record<
+          string,
+          unknown
+        >;
+        if (!body || typeof body !== "object" || Array.isArray(body))
+          return error("invalid-document", "Choose a memory archive.");
+        const result =
+          path === "/api/memory/new"
+            ? options.service.createExportableMemory(
+                body.characterId,
+                body.consent,
+              )
+            : path === "/api/memory/preview"
+              ? options.service.previewMemory(body.archive)
+              : options.service.importMemory(body.archive, body.expectedDigest);
+        return Response.json(result, { status: result.ok ? 200 : 400 });
+      }
+
       if (path === "/api/characters/authoring" && request.method === "GET")
         return Response.json({
           library: CHARACTER_LIBRARY,

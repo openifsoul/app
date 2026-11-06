@@ -2,6 +2,7 @@
   "package": "@ifsoul/core",
   "version": "0.2.0-alpha.1",
   "repository": "https://github.com/openifsoul/core",
-  "commit": "1dd6f800117c9be215e76553198e74e2db404be0",
-  "sha256": "ab3b1419cd7097df2d08599e22d5bab4d93e2c50c9227a179d529985e5e1efc3"
+  "commit": "94f735ba752abb4a4f45d4e6e848ffa9df264436",
+  "sha256": "5d4c9d3147f3b3d0ceaaead44499607584aa300feda72755ca4026e4dc1dd407",
+  "sourceState": "clean reviewed source commit; built locally; no registry publication"
 }

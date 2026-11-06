@@ -8,6 +8,7 @@ import type {
   TaskReport,
 } from "@ifsoul/core/protocol";
 import type { MemoryPort, Result } from "@ifsoul/core/memory/port";
+import type { inspectBridgeMemory } from "./bridge-memory.js";
 import type { AgentController } from "@ifsoul/core/runtime";
 import type {
   ModelClient,
@@ -60,6 +61,7 @@ export interface LabRun {
   result: LabOperationResult;
 }
 export interface LabSnapshot {
+  bridgeReflection?: ReturnType<typeof inspectBridgeMemory>["reflection"];
   persona?: CharacterInstance;
   character: CharacterInstance;
   memories: MemoryEvent[];
@@ -98,6 +100,20 @@ export interface CharacterSummary {
   description: string;
 }
 export interface CharacterWorkspace extends LabService {
+  exportMemory(
+    memoryId: string,
+  ): ReturnType<typeof import("./memory-archive.js").exportMemoryArchive>;
+  previewMemory(
+    archive: unknown,
+  ): ReturnType<typeof import("./memory-archive.js").previewMemoryArchive>;
+  importMemory(
+    archive: unknown,
+    expectedDigest: unknown,
+  ): ReturnType<typeof import("./memory-archive.js").importMemoryArchive>;
+  createExportableMemory(
+    characterId: unknown,
+    consent: unknown,
+  ): ReturnType<typeof import("./memory-archive.js").createExportableMemory>;
   listCharacters(): Result<CharacterSummary[]>;
   createCharacter(draft: CharacterDraft): Result<LabSnapshot>;
   snapshot(

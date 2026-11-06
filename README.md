@@ -48,3 +48,46 @@ TypeScript source for Vite/tsx consumers. Its archive provenance is recorded in
 Checks and builds run locally. There is no CI, automatic publishing, scheduled
 execution or deployment configured. Existing production remains untouched by this
 repository extraction. Apache-2.0; see LICENSE and NOTICE.
+
+## Memory and continuity
+
+App implements bounded, persistent evidence, extractive episodes and revisable
+source-grounded interpretations. Character-to-player relationships continue across
+hosts and App chat within one trusted owner store; role claims keep their world
+scope. Profiles and selected memory are independent. Models propose updates;
+trusted code validates sources and rejects stale writes.
+
+See [memory architecture](docs/memory.md) for the evidence-flow diagram, identity
+and reset boundaries, exact retention limits, local milestone evidence and
+remaining work. The current bounded continuity slice is locally validated;
+bounded filtered memory transfer now creates separate forks after validation;
+complete archives, same-identity restore and broader product UI E2E remain future work.
+
+Local Ollama bridge requests allow 50 seconds for generation, within a 55-second
+runtime envelope. Other compositions retain the default 25-second generation
+budget and 30-second envelope. A trusted host can pass `generationTimeoutMs`
+(1–55000 ms) as the fifth `runBridgeRequest` argument; request bodies cannot
+change this limit. SDK hosts using local Ollama should set `requestTimeoutMs`
+to 60000 so the host does not cancel a valid local generation early.
+
+Bridge replies follow the latest player question’s language when `language` is
+omitted. An SDK integrator may supply an explicit validated BCP 47 `language`
+locale; that selection overrides automatic detection. The first-party Playground
+omits this option and follows the question.
+
+Local Ollama model prompts use a trusted 10000-byte structured-wire budget to
+bound prefill latency. Other providers retain the 21000-byte default. The
+composition-only `promptBudgetBytes` option accepts 8000–21000 bytes; browser
+request bodies cannot raise it. This selects and, when necessary, compacts recalled
+context with omission flags while preserving representative worlds and report
+attribution. The prompt is a bounded view, not a full backup: durable memory and
+owner inspection remain intact. Optional reflection may be deferred when it
+cannot fit; the request still makes at most one model call.
+
+The bridge distinguishes user `chat(message)` from host-triggered `speak` scene
+context. Host instructions are not user utterances and do not choose a reply
+language. Host reactions use the latest actual user utterance for the selected
+memory and historical portrayal, across game hosts and App chat; they react to
+the new scene rather than answer the old question again. With no retained user
+utterance, the character's configured speech language is the fallback. An
+explicit SDK `language` selection still takes precedence.

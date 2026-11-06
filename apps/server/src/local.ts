@@ -1,3 +1,4 @@
+import { runBridgeRequest, observeBridgeRequest } from "./bridge.js";
 import { createCharacterWorkspace } from "../../runtime-host/src/characters.js";
 import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
@@ -126,6 +127,9 @@ const service = createCharacterWorkspace({
       : createModelController({
           client: await clientFor(selection),
           model: selection.model,
+          promptBudgetBytes:
+            selection.provider === "ollama" ? 10_000 : undefined,
+          reflection: { memory },
         })(input, signal),
 });
 const api = createAPI({
@@ -139,6 +143,21 @@ const api = createAPI({
   store,
   service,
   providers,
+  observeBridge: (body) => {
+    observeBridgeRequest(body, memory);
+  },
+  bridge: async (body, selection) =>
+    runBridgeRequest(
+      body,
+      await clientFor(selection),
+      selection.model,
+      memory,
+      {
+        generationTimeoutMs:
+          selection.provider === "ollama" ? 50_000 : undefined,
+        promptBudgetBytes: selection.provider === "ollama" ? 10_000 : undefined,
+      },
+    ),
 });
 const port = Number(process.env.PORT ?? 8788);
 if (!Number.isInteger(port) || port < 1024 || port > 65535)

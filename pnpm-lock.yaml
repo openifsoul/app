@@ -262,7 +262,7 @@ packages:
       react: '>=17'
 
   '@ifsoul/core@file:vendor/ifsoul-core-0.2.0-alpha.1.tgz':
-    resolution: {integrity: sha512-xwqjem3aL9uPdaVWTXSeDY2SLO04u1/PVYrdTXeSXPfkcoJOuR/Wp/OZmCnxNfAOhkDwErO4Agl3KttKLgQskA==, tarball: file:vendor/ifsoul-core-0.2.0-alpha.1.tgz}
+    resolution: {integrity: sha512-MY/So4avV2WElx9L2Q4du7CZVN8KWPA1f2JfJfTkdyS3vzpWHTHC9ysRRUpk6wYjnyGcFXkg9B93mouwijD3SA==, tarball: file:vendor/ifsoul-core-0.2.0-alpha.1.tgz}
     version: 0.2.0-alpha.1
     engines: {node: '>=22.18 <25'}
 

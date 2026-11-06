@@ -1,3 +1,4 @@
+import { MemoryArchiveControls } from "./MemoryArchive";
 import { Message, MessageContent } from "./ui/message";
 import { Suggestions, Suggestion } from "./ui/suggestions";
 import { useMemo, useState } from "react";
@@ -30,6 +31,7 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import type { LabSnapshot } from "../lib/api";
 import type { MemoryEvent } from "@ifsoul/core/protocol";
+import { ReflectionMemory } from "./ReflectionMemory";
 
 type PanelProps = {
   snapshot: LabSnapshot | null;
@@ -465,9 +467,13 @@ const stageLabels: Record<string, string> = {
 export function EvidencePanel({
   snapshot,
   debug = false,
+  disabled,
+  onMemoryImported,
 }: {
   snapshot: LabSnapshot | null;
   debug?: boolean;
+  disabled?: boolean;
+  onMemoryImported?: (id: string) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
   const lastRun = snapshot?.runs.at(-1);
@@ -513,6 +519,14 @@ export function EvidencePanel({
           </span>
         </div>
         <TabsContent value="memory">
+          <MemoryArchiveControls
+            memoryId={snapshot?.character.characterId}
+            profileId={
+              snapshot?.persona?.characterId ?? snapshot?.character.characterId
+            }
+            disabled={disabled}
+            onImported={onMemoryImported}
+          />
           <div className="memory-toolbar">
             <div>
               <h3>Remembered events</h3>
@@ -533,6 +547,10 @@ export function EvidencePanel({
           </div>
           <ScrollArea className="memory-scroll">
             <div className="memory-list">
+              <ReflectionMemory
+                reflection={snapshot?.bridgeReflection}
+                query={query}
+              />
               {memories.length ? (
                 memories.map((memory) => (
                   <article className="memory-row" key={memory.memoryId}>

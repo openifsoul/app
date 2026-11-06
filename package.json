@@ -37,7 +37,8 @@
     "README.md",
     "vendor",
     "dist/server",
-    "LICENSES"
+    "LICENSES",
+    "docs"
   ],
   "sideEffects": [
     "**/*.css"

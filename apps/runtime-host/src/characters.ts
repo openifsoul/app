@@ -1,3 +1,9 @@
+import {
+  exportMemoryArchive,
+  previewMemoryArchive,
+  importMemoryArchive,
+  createExportableMemory,
+} from "./memory-archive.js";
 import { createHash } from "node:crypto";
 import { canonical } from "@ifsoul/core/protocol";
 import type { CharacterInstance } from "@ifsoul/core/protocol";
@@ -24,7 +30,12 @@ export function createCharacterWorkspace(
   options: LabServiceOptions,
 ): CharacterWorkspace {
   const { memory } = options;
-  const initial = memory.putCharacter(character());
+  const existingStarter = memory.getCharacter(IDS.character);
+  const initial = !existingStarter.ok
+    ? existingStarter
+    : existingStarter.value
+      ? success(existingStarter.value)
+      : memory.putCharacter(character());
   const load = (id = IDS.character as string, memoryId = id) => {
     if (!initial.ok) return initial;
     if (
@@ -50,6 +61,16 @@ export function createCharacterWorkspace(
   };
   let busy = false;
   return {
+    exportMemory: (id) => exportMemoryArchive(memory, id),
+    previewMemory: previewMemoryArchive,
+    importMemory: (archive, expected) =>
+      busy
+        ? failure("conflict", "Wait for the current operation.")
+        : importMemoryArchive(memory, archive, expected),
+    createExportableMemory: (id, consent) =>
+      busy
+        ? failure("conflict", "Wait for the current operation.")
+        : createExportableMemory(memory, id, consent),
     listCharacters() {
       if (!initial.ok) return initial;
       const all = memory.listCharacters(100);
