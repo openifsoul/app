@@ -31,7 +31,8 @@ outcomes; IfSoul supplies bounded proposals and dialogue.
 
 `@ifsoul/app/browser` exports the shared App, RuntimeBootstrap and explicit
 RuntimeAuthContext/token/theme ports. The hosting application injects its
-`cloudAuth` component; App contains no Clerk dependency. Import
+`cloudAuth` component; App contains no Clerk dependency. Optional
+`RuntimeAuth.playgroundHref` navigation is supplied only by hosts that own a playground. Import
 `@ifsoul/app/styles.css` once. Named `@ifsoul/app/ui/*` exports are the shared
 primitives needed by the first-party website. `@ifsoul/app/server` exports generic
 HTTP API, security helpers, character workspace and model controllers. Hosting

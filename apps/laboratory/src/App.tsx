@@ -552,13 +552,12 @@ export function App() {
         </a>
         <div className="app-sign-in-copy">
           <h1>Continue your character’s story.</h1>
-          <p>
-            Sign in with Google or email to open your cloud characters and
-            memory.
-          </p>
+          <p>Sign in to open your characters and memory.</p>
         </div>
         {auth.signInView}
-        <a href="/demo">Explore the free scenario playground</a>
+        {auth.playgroundHref && (
+          <a href={auth.playgroundHref}>Explore the free scenario playground</a>
+        )}
       </main>
     );
   return <WorkspaceApp key={auth.userId} />;

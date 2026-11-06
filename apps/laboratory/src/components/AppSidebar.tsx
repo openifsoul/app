@@ -145,10 +145,10 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupLabel>Explore</SidebarGroupLabel>
           <SidebarMenu>
-            {auth.config.mode === "cloud" && (
+            {auth.playgroundHref && (
               <SidebarMenuItem>
                 <SidebarMenuButton asChild tooltip="Playground">
-                  <a href="/demo">
+                  <a href={auth.playgroundHref}>
                     <Gamepad2 />
                     <span>Playground</span>
                   </a>

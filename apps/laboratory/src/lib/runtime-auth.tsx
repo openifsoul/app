@@ -26,6 +26,8 @@ export interface RuntimeAuth {
   signOut(): Promise<void>;
   signInView?: ReactNode;
   accountView?: ReactNode;
+  /** Optional navigation owned by the composing host. */
+  playgroundHref?: string;
 }
 export const RuntimeAuthContext = createContext<RuntimeAuth | null>(null);
 export function useRuntimeAuth() {
