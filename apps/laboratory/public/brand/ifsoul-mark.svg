@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="ifsoul-mark" viewBox="0 0 96 80" fill="none">
+  <defs>
+    <linearGradient id="braces" x1="7" y1="18" x2="89" y2="62" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#45d9e8"/>
+      <stop offset=".35" stop-color="#61c6ef"/>
+      <stop offset=".65" stop-color="#9b7df4"/>
+      <stop offset="1" stop-color="#b367ef"/>
+    </linearGradient>
+  </defs>
+  <path d="M27 8C14 8 16 21 16 28C16 35 13 40 6 40C13 40 16 45 16 52C16 59 14 72 27 72M69 8C82 8 80 21 80 28C80 35 83 40 90 40C83 40 80 45 80 52C80 59 82 72 69 72" stroke="url(#braces)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="currentColor">
+    <rect x="35" y="34" width="7" height="12" rx="3.5"/>
+    <rect x="54" y="34" width="7" height="12" rx="3.5"/>
+  </g>
+</svg>

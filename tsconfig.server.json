@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist/server",
+    "rootDir": ".",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": [
+    "apps/server/src/**/*.ts",
+    "apps/runtime-host/src/**/*.ts",
+    "apps/simulator/src/**/*.ts"
+  ]
+}

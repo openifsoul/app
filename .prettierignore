@@ -1,0 +1,12 @@
+node_modules/
+pnpm-lock.yaml
+LICENSE
+LICENSES/
+.local/
+packages/protocol/src/generated/validators.cjs
+dist/
+.wrangler/
+worker-configuration.d.ts
+.playwright-cli/
+output/
+vendor/**/*.tgz
