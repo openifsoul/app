@@ -21,7 +21,7 @@ export const IDS = {
   water: "lab-task-water",
 } as const;
 
-const envelope = { schemaVersion: "draft-0.2.0" as const };
+const envelope = { schemaVersion: "0.3.0" as const };
 export const gardenBinding = {
   environmentId: IDS.garden,
   sessionId: "lab-garden-session-1",

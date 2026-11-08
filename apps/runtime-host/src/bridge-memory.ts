@@ -140,7 +140,7 @@ export function bridgeMemoryEvent(
   const character = owner(memory, memoryId);
   if (!character) throw Error("Memory owner missing");
   return {
-    schemaVersion: "draft-0.2.0",
+    schemaVersion: "0.3.0",
     kind: "memory-event",
     memoryId: id,
     characterId: memoryId,
@@ -388,7 +388,15 @@ export function recordBridgeRequest(
   memory: MemoryPort,
   memoryId: string,
   request: BridgeRequest,
+  retention: { historyEntries?: number } = {},
 ) {
+  const historyEntries = retention.historyEntries ?? 8;
+  if (
+    !Number.isSafeInteger(historyEntries) ||
+    historyEntries < 1 ||
+    historyEntries > 128
+  )
+    throw new RangeError("Invalid retained report window");
   const prior = activeBridgeEvents(memory, memoryId).filter(
     (e) => e.eventType === "bridge-evidence",
   );
@@ -457,8 +465,14 @@ export function recordBridgeRequest(
         request.character.id,
       ),
       browserContext: request.context.slice(0, 2000),
+      ...(request.context.length > 2000
+        ? { omittedContextCharacters: request.context.length - 2000 }
+        : {}),
+      ...(request.history.length > historyEntries
+        ? { omittedInputReports: request.history.length - historyEntries }
+        : {}),
       browserReports: request.history
-        .slice(-8)
+        .slice(-historyEntries)
         .filter((h) => !reported.has(h.id))
         .map((h) => ({
           id: h.id,

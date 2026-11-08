@@ -1,3 +1,4 @@
+import { AppResourceError } from "./resource-policy.js";
 /** Private owner-laboratory authentication. No credential is returned to clients. */
 const bytes = (text: string) => new TextEncoder().encode(text);
 const b64 = (data: Uint8Array) =>
@@ -119,6 +120,20 @@ export async function boundedJSON(
       .startsWith("application/json")
   )
     throw Error("content-type");
+  if (!Number.isSafeInteger(max) || max < 1 || max > 64 * 1024 * 1024)
+    throw new AppResourceError(
+      "unsupported-policy",
+      "buffered-json",
+      "maxBodyBytes",
+    );
+  if (Number(request.headers.get("content-length")) > max) {
+    await request.body?.cancel();
+    throw new AppResourceError(
+      "budget-exceeded",
+      "http-ingress",
+      "maxBodyBytes",
+    );
+  }
   const reader = request.body?.getReader();
   if (!reader) throw Error("body");
   let size = 0;
@@ -128,11 +143,17 @@ export async function boundedJSON(
       const part = await reader.read();
       if (part.done) break;
       size += part.value.byteLength;
-      if (size > max) throw Error("body");
+      if (size > max)
+        throw new AppResourceError(
+          "budget-exceeded",
+          "http-ingress",
+          "maxBodyBytes",
+        );
       chunks.push(part.value);
     }
   } finally {
     await reader.cancel();
+    reader.releaseLock();
   }
   const all = new Uint8Array(size);
   let offset = 0;

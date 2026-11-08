@@ -159,7 +159,7 @@ export function createCharacterWorkspace(
           "This laboratory supports up to 50 characters.",
         );
       const document: CharacterInstance = {
-        schemaVersion: "draft-0.2.0",
+        schemaVersion: "0.3.0",
         kind: "character-instance",
         characterId: id,
         participantId: `participant-${draft.requestId}`,
@@ -233,7 +233,7 @@ export function createCharacterWorkspace(
           "This laboratory supports up to 50 characters.",
         );
       const document: CharacterInstance = {
-        schemaVersion: "draft-0.2.0",
+        schemaVersion: "0.3.0",
         kind: "character-instance",
         characterId: id,
         participantId: `participant-${request.requestId}`,

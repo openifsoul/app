@@ -89,3 +89,44 @@ test("trusted generation budget reaches the runtime timer while defaults remain 
     opened.value.close();
   }
 });
+
+test("maximum accepted temperament and a fresh independent memory owner fit the fallback profile schema", async () => {
+  const opened = openSQLiteMemory(":memory:");
+  assert(opened.ok);
+  if (!opened.ok) return;
+  const memory = opened.value;
+  const temperament = "x".repeat(160);
+  let calls = 0;
+  try {
+    const result = await runBridgeRequest(
+      {
+        ...request,
+        version: "ifsoul-bridge/0.3.0",
+        memoryId: "fresh-owner",
+        character: { id: "unseen-portrayal", name: "Original", temperament },
+      },
+      {
+        id: "ollama",
+        async generate() {
+          calls++;
+          return {
+            ok: true,
+            value: { content: "Hello from an original synthetic host." },
+          };
+        },
+      },
+      "synthetic",
+      memory,
+    );
+    assert.equal(result.source, "llm");
+    assert.equal(calls, 1);
+    const stored = memory.getCharacter("fresh-owner");
+    assert(stored.ok && stored.value);
+    if (!stored.ok || !stored.value) return;
+    assert.equal(stored.value.profile.traits.temperament, temperament);
+    assert(stored.value.profile.speechStyle.description.length <= 500);
+    assert.equal(stored.value.schemaVersion, "0.3.0");
+  } finally {
+    memory.close();
+  }
+});

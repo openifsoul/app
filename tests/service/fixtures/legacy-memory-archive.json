@@ -1,0 +1,71 @@
+{
+  "version": "ifsoul-app-memory/0.1",
+  "payload": {
+    "sourceMemoryId": "character-mira",
+    "createdAt": "2026-11-08T12:00:00Z",
+    "mode": "filtered-owner-fork",
+    "authority": "untrusted-history-no-execution-rights",
+    "playerSubjectId": "player:01234567890123456789",
+    "characters": [
+      {
+        "schemaVersion": "draft-0.2.0",
+        "kind": "character-instance",
+        "characterId": "character-mira",
+        "participantId": "participant-mira",
+        "createdAt": "2026-01-01T08:00:00Z",
+        "template": {
+          "templateId": "template-mira-v2",
+          "revision": 1
+        },
+        "profile": {
+          "name": "Mira Vale",
+          "description": "An original synthetic character who enjoys careful gardening.",
+          "traits": {
+            "patience": "high",
+            "curiosity": 0.7
+          },
+          "preferences": [
+            {
+              "preferenceId": "quiet",
+              "subject": "conversation setting",
+              "stance": "seek",
+              "description": "Prefers calm settings when available.",
+              "strength": 0.8
+            }
+          ],
+          "speechStyle": {
+            "description": "Uses concise, warm language when the current embodiment supports language.",
+            "languages": ["en"],
+            "habits": ["Asks one question at a time."]
+          },
+          "goals": [
+            {
+              "goalId": "grow-herbs",
+              "description": "Learn to care for a small herb garden.",
+              "priority": "normal",
+              "status": "desired"
+            }
+          ],
+          "authoredBiography": {
+            "text": "Mira grew up beside an imagined hillside garden. This is authored fiction, not a record of lived sessions.",
+            "fictional": true
+          }
+        },
+        "memoryRecordIds": [],
+        "relationshipMemoryIds": []
+      }
+    ],
+    "events": [],
+    "profileOrigins": {
+      "character-mira": "character-mira"
+    },
+    "unknownProfiles": [],
+    "losses": ["Original synthetic legacy archive; no runtime authority."],
+    "omitted": {
+      "forbidden": 0,
+      "unsupported": 0,
+      "derived": 0
+    }
+  },
+  "sha256": "a5b2bcb94d555fcaf96f2ae614966744cc68a417e784420dc7a43650efd131a9"
+}

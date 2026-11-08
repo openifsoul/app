@@ -201,6 +201,7 @@ function WorkspaceApp() {
         operation === "chat" ? "chat" : "lab/run",
         {
           method: "POST",
+          timeoutMs: auth.config.requestTimeoutMs,
           body: {
             characterId,
             memoryCharacterId,
@@ -216,6 +217,7 @@ function WorkspaceApp() {
         character: result.character,
         persona: result.persona,
         memories: result.memories,
+        bridgeReflection: result.bridgeReflection,
         runs: result.runs,
       });
       if (result.result.type === "failure") {

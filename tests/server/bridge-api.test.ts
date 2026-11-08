@@ -100,6 +100,22 @@ test("generic bridge route requires trusted local origin and an explicit availab
       "The orbital observatory is a new host.",
     );
     assert.equal(calls, 1);
+    body.version = "ifsoul-bridge/0.3.0";
+    body.requestId = "fourth-host-current";
+    const current = await api(request());
+    assert.equal(current.status, 200);
+    assert.equal((await current.json()).source, "llm");
+    assert.equal(calls, 2);
+    for (const version of ["ifsoul-bridge/9.9", "ifsoul-app-memory/0.3.0"]) {
+      body.version = version;
+      const unsupported = await api(request());
+      assert.equal(unsupported.status, 400);
+      assert.equal(
+        (await unsupported.json()).error.code,
+        "unsupported-version",
+      );
+      assert.equal(calls, 2);
+    }
   } finally {
     opened.value.close();
   }
@@ -145,7 +161,7 @@ test("bridge rechecks serialization after delayed body parsing and observations 
   });
   const make = (
     path = "/api/bridge?provider=ollama&model=test",
-    body: BodyInit = "{}",
+    body: BodyInit = JSON.stringify({ version: "ifsoul-bridge/0.3.0" }),
   ) =>
     new Request("http://127.0.0.1:8788" + path, {
       method: "POST",
@@ -167,7 +183,11 @@ test("bridge rechecks serialization after delayed body parsing and observations 
     const delayed = api(make(undefined, slow));
     const running = api(make());
     while (!active) await new Promise((r) => setTimeout(r, 1));
-    feed.enqueue(new TextEncoder().encode("{}"));
+    feed.enqueue(
+      new TextEncoder().encode(
+        JSON.stringify({ version: "ifsoul-bridge/0.3.0" }),
+      ),
+    );
     feed.close();
     assert.equal((await delayed).status, 409);
     assert.equal(active, 1);

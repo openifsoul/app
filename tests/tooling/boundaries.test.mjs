@@ -87,40 +87,43 @@ test("public App has no private/account package, sibling import or browser backe
     await checkImports(source, file);
   }
 });
-test("reviewed Core archive contains no local data, identity service, executable automation or secrets", () => {
-  const receipt = JSON.parse(
-    readFileSync(resolve(root, "vendor/core-receipt.json"), "utf8"),
-  );
-  assert.equal(
-    createHash("sha256")
-      .update(
-        readFileSync(resolve(root, "vendor/ifsoul-core-0.2.0-alpha.1.tgz")),
-      )
-      .digest("hex"),
-    receipt.sha256,
-  );
-  assert.match(receipt.commit, /^[a-f0-9]{40}$/);
-  const members = execFileSync(
-    "tar",
-    ["-tzf", resolve(root, "vendor/ifsoul-core-0.2.0-alpha.1.tgz")],
-    { encoding: "utf8" },
-  )
-    .trim()
-    .split("\n");
-  const content = execFileSync(
-    "tar",
-    ["-xOf", resolve(root, "vendor/ifsoul-core-0.2.0-alpha.1.tgz")],
-    { encoding: "utf8", maxBuffer: 10_000_000 },
-  );
-  assert.equal(
-    hasPotentialSecret(content),
-    false,
-    "Potential secret in Core distribution",
-  );
-  assert.ok(members.includes("package/package.json"));
-  for (const member of members)
-    assert.doesNotMatch(
-      member,
-      /(?:^|\/)(?:\.env[^/]*|\.local|\.git|\.github|data|backups|cloud|website)(?:\/|$)|\.(?:sqlite|db|pem|key)(?:$|\/)/,
+for (const [label, stem, receiptFile] of [
+  ["Core", "ifsoul-core-0.3.0", "core-receipt.json"],
+  ["SDK", "ifsoul-adapter-sdk-0.3.0", "sdk-receipt.json"],
+]) {
+  test(`pinned ${label} archive contains no local data, identity service, executable automation or secrets`, () => {
+    const receipt = JSON.parse(
+      readFileSync(resolve(root, `vendor/${receiptFile}`), "utf8"),
     );
-});
+    assert.equal(
+      createHash("sha256")
+        .update(readFileSync(resolve(root, `vendor/${stem}.tgz`)))
+        .digest("hex"),
+      receipt.sha256,
+    );
+    assert.match(receipt.commit, /^[a-f0-9]{40}$/);
+    const members = execFileSync(
+      "tar",
+      ["-tzf", resolve(root, `vendor/${stem}.tgz`)],
+      { encoding: "utf8" },
+    )
+      .trim()
+      .split("\n");
+    const content = execFileSync(
+      "tar",
+      ["-xOf", resolve(root, `vendor/${stem}.tgz`)],
+      { encoding: "utf8", maxBuffer: 10_000_000 },
+    );
+    assert.equal(
+      hasPotentialSecret(content),
+      false,
+      `Potential secret in ${label} distribution`,
+    );
+    assert.ok(members.includes("package/package.json"));
+    for (const member of members)
+      assert.doesNotMatch(
+        member,
+        /(?:^|\/)(?:\.env[^/]*|\.local|\.git|\.github|data|backups|cloud|website)(?:\/|$)|\.(?:sqlite|db|pem|key)(?:$|\/)/,
+      );
+  });
+}

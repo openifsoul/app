@@ -1,3 +1,9 @@
+import { bridgeCapabilities } from "@ifsoul/adapter-sdk/bridge";
+import {
+  AppResourceError,
+  httpBodyBudget,
+  type AppResourcePolicy,
+} from "./resource-policy.js";
 import type { BridgeRequest, BridgeResponse } from "./bridge.js";
 import type { ProviderSelection } from "@ifsoul/core/model-providers/types";
 import { appConfig, trustedLocalRequest } from "./app-auth.js";
@@ -35,6 +41,7 @@ export interface PrivateStore {
 }
 export interface APIOptions {
   mode: "local" | "cloud";
+  resourcePolicy?: AppResourcePolicy;
   password: string;
   access?:
     { kind: "local"; origin: string } | { kind: "principal"; id: string };
@@ -58,7 +65,23 @@ export function createAPI(options: APIOptions) {
   return async (request: Request): Promise<Response> => {
     try {
       return secured(await handle(request));
-    } catch {
+    } catch (reason) {
+      if (reason instanceof AppResourceError && options.resourcePolicy)
+        return secured(
+          Response.json(
+            {
+              ok: false,
+              error: {
+                code: reason.code,
+                layer: reason.layer,
+                field: reason.field,
+                message:
+                  "The configured resource budget does not support this request.",
+              },
+            },
+            { status: reason.code === "budget-exceeded" ? 413 : 400 },
+          ),
+        );
       return secured(
         error(
           "server-error",
@@ -75,13 +98,22 @@ export function createAPI(options: APIOptions) {
         originalPath === "/api/chat" || originalPath === "/api/lab/run"
           ? "/api/run"
           : originalPath;
+    const readBody = (legacyMaximum = 16384) =>
+      boundedJSON(
+        request,
+        options.resourcePolicy
+          ? httpBodyBudget(options.resourcePolicy, originalPath, request.method)
+          : legacyMaximum,
+      );
     if (
       options.access?.kind === "local" &&
       !trustedLocalRequest(request, options.access.origin)
     )
       return error("forbidden", "Open the app on its loopback address.", 403);
     if (originalPath === "/api/config" && request.method === "GET")
-      return Response.json(appConfig(options.mode));
+      return Response.json(
+        appConfig(options.mode, options.resourcePolicy?.browserTimeoutMs),
+      );
     if (
       options.access &&
       options.mode === "cloud" &&
@@ -126,7 +158,7 @@ export function createAPI(options: APIOptions) {
         );
       attempt.count++;
       options.store.set("login-window", JSON.stringify(attempt));
-      const body = (await boundedJSON(request)) as { password?: unknown };
+      const body = (await readBody()) as { password?: unknown };
       if (
         typeof body?.password !== "string" ||
         body.password.length > 256 ||
@@ -157,14 +189,36 @@ export function createAPI(options: APIOptions) {
         providers: auth ? await options.providers() : [],
       });
     if (!auth) return error("unauthorized", "Sign in to continue.", 401);
+    if (path === "/api/resource-policy" && request.method === "GET")
+      return Response.json(
+        options.resourcePolicy?.metadata ?? {
+          version: "ifsoul-app-resource-policy/0.3.0",
+          bridge: bridgeCapabilities(),
+          model: { context: "composition-controlled", accounting: "unknown" },
+          http: {
+            bodyBytes: 16384,
+            transport: "buffered-json",
+            streamingLargeMessages: false,
+          },
+        },
+      );
     if (
       path === "/api/bridge/observations" &&
       request.method === "POST" &&
       options.observeBridge
     ) {
-      const body = await boundedJSON(request);
+      const body = await readBody();
       if (!body || typeof body !== "object" || Array.isArray(body))
         return error("invalid-request", "Enter a bounded bridge request.");
+      if (
+        !["ifsoul-bridge/0.1", "ifsoul-bridge/0.3.0"].includes(
+          (body as { version: string }).version,
+        )
+      )
+        return error(
+          "unsupported-version",
+          "Use a supported IfSoul bridge version (0.3.0 or legacy 0.1).",
+        );
       options.observeBridge(body as BridgeRequest);
       return Response.json({ ok: true });
     }
@@ -190,9 +244,18 @@ export function createAPI(options: APIOptions) {
           "unavailable",
           "Choose an available model using provider and model URL parameters.",
         );
-      const body = await boundedJSON(request);
+      const body = await readBody();
       if (!body || typeof body !== "object" || Array.isArray(body))
         return error("invalid-request", "Enter a bounded bridge request.");
+      if (
+        !["ifsoul-bridge/0.1", "ifsoul-bridge/0.3.0"].includes(
+          (body as { version: string }).version,
+        )
+      )
+        return error(
+          "unsupported-version",
+          "Use a supported IfSoul bridge version (0.3.0 or legacy 0.1).",
+        );
       if (busy)
         return error(
           "busy",
@@ -228,7 +291,7 @@ export function createAPI(options: APIOptions) {
         return Response.json({ ok: true });
       }
       if (request.method === "POST") {
-        const body = (await boundedJSON(request)) as { key?: unknown };
+        const body = (await readBody()) as { key?: unknown };
         if (
           typeof body?.key !== "string" ||
           body.key.length < 20 ||
@@ -262,10 +325,7 @@ export function createAPI(options: APIOptions) {
         request.method === "POST"
       ) {
         if (busy) return error("busy", "Wait for the current operation.", 409);
-        const body = (await boundedJSON(request, 2_010_000)) as Record<
-          string,
-          unknown
-        >;
+        const body = (await readBody(2_010_000)) as Record<string, unknown>;
         if (!body || typeof body !== "object" || Array.isArray(body))
           return error("invalid-document", "Choose a memory archive.");
         const result =
@@ -298,7 +358,7 @@ export function createAPI(options: APIOptions) {
             "Wait for the current operation to finish.",
             409,
           );
-        const body = (await boundedJSON(request, 70000)) as {
+        const body = (await readBody(70000)) as {
           requestId: string;
           template: unknown;
         };
@@ -316,7 +376,7 @@ export function createAPI(options: APIOptions) {
             "Wait for the current operation to finish.",
             409,
           );
-        const draft = (await boundedJSON(request)) as CharacterDraft;
+        const draft = (await readBody()) as CharacterDraft;
         const result = options.service.createCharacter(draft);
         return Response.json(result, { status: result.ok ? 200 : 400 });
       }
@@ -344,8 +404,7 @@ export function createAPI(options: APIOptions) {
           "An operation is already running. Wait for its result.",
           409,
         );
-      const body = (await boundedJSON(request)) as LabRunRequest &
-        GenerationRequest;
+      const body = (await readBody()) as LabRunRequest & GenerationRequest;
       if (!body || typeof body !== "object")
         return error("invalid-request", "Choose an operation and model.");
       if (originalPath === "/api/chat" && body.operation !== "chat")

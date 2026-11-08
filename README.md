@@ -8,6 +8,8 @@ private repository or sibling checkout.
 Requires Node 22.18–24 and pnpm 10.15.0. Run locally:
 
 ```sh
+git clone https://github.com/openifsoul/app.git
+cd app
 pnpm install --frozen-lockfile
 pnpm check
 pnpm build:web
@@ -40,14 +42,16 @@ owns authentication, per-user storage routing, owner-funded quotas and assets.
 It must verify identity before passing a trusted `access.kind = "principal"`.
 
 Core is consumed through the versioned public `@ifsoul/core` exports. The reviewed
-prerelease archive in `vendor/` makes this checkout independently installable;
-no npm publication is implied. This experimental package currently exports
-TypeScript source for Vite/tsx consumers. Its archive provenance is recorded in
+archive in `vendor/` makes this checkout independently installable;
+no npm publication is implied. UI entrypoints export TypeScript source for Vite/tsx consumers; server entrypoints
+export compiled ESM and declarations. Local `start`/`lab` commands use the source
+checkout and development toolchain; the archive is not a turnkey CLI installer. Its archive provenance is recorded in
 `vendor/README.md`.
 
-Checks and builds run locally. There is no CI, automatic publishing, scheduled
-execution or deployment configured. Existing production remains untouched by this
-repository extraction. Apache-2.0; see LICENSE and NOTICE.
+Release checks and builds run locally. GitHub Actions checks on push and pull
+requests are authorized by the [execution policy](docs/deployment.md); activation
+and a passing result require an actual published workflow run. No automatic
+publishing, schedules or deployment are configured. Apache-2.0; see LICENSE and NOTICE.
 
 ## Memory and continuity
 
@@ -63,7 +67,7 @@ remaining work. The current bounded continuity slice is locally validated;
 bounded filtered memory transfer now creates separate forks after validation;
 complete archives, same-identity restore and broader product UI E2E remain future work.
 
-Local Ollama bridge requests allow 50 seconds for generation, within a 55-second
+By default, local Ollama bridge requests allow 50 seconds for generation, within a 55-second
 runtime envelope. Other compositions retain the default 25-second generation
 budget and 30-second envelope. A trusted host can pass `generationTimeoutMs`
 (1–55000 ms) as the fifth `runBridgeRequest` argument; request bodies cannot
@@ -77,8 +81,9 @@ omits this option and follows the question.
 
 Local Ollama model prompts use a trusted 10000-byte structured-wire budget to
 bound prefill latency. Other providers retain the 21000-byte default. The
-composition-only `promptBudgetBytes` option accepts 8000–21000 bytes; browser
-request bodies cannot raise it. This selects and, when necessary, compacts recalled
+direct composition-only `promptBudgetBytes` option keeps its legacy 8000–21000-byte
+range. A trusted resource policy can explicitly configure a larger supported
+ceiling; browser request bodies cannot raise it. This selects and, when necessary, compacts recalled
 context with omission flags while preserving representative worlds and report
 attribution. The prompt is a bounded view, not a full backup: durable memory and
 owner inspection remain intact. Optional reflection may be deferred when it
@@ -91,3 +96,13 @@ memory and historical portrayal, across game hosts and App chat; they react to
 the new scene rather than answer the old question again. With no retained user
 utterance, the character's configured speech language is the fallback. An
 explicit SDK `language` selection still takes precedence.
+
+For runtime-only self-host configuration, safe capability metadata, separate byte/token/deadline budgets and unsupported large messages, see [resource budgets](docs/resource-budgets.md). The local 10,000-byte prompt bound is a configurable packing heuristic, not a model/provider limit.
+
+## Current release and compatibility
+
+The current coordinated release is **IfSoul 0.3.0**. Package, current-format and
+artifact identifiers share this release. Historical formats remain explicit
+compatibility inputs; matching release numbers do not make different format
+families interchangeable. See [compatibility](docs/compatibility.md).
+Registry publication and deployment are separate authorized release actions.

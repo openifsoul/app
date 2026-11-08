@@ -75,6 +75,8 @@ export interface LabRunResponse extends LabSnapshot {
 export interface LabServiceOptions {
   /** Neutral application conversation; synthetic planning remains a local-only host. */
   chatEnvironment?: "app";
+  runtimeLimits?: Partial<import("@ifsoul/core/runtime").RuntimeLimits>;
+  runtimeCeilings?: Partial<import("@ifsoul/core/runtime").RuntimeLimits>;
   character?: CharacterInstance;
   persona?: CharacterInstance;
   clientFor?: (selection: ProviderSelection) => Promise<ModelClient>;
@@ -130,9 +132,9 @@ export interface CharacterWorkspace extends LabService {
   ): Promise<Result<CharacterTemplate>>;
 }
 
-/** Laboratory source type for the existing draft-0.2.0 template schema. */
+/** Laboratory source type for the current and supported legacy template schemas. */
 export interface CharacterTemplate {
-  schemaVersion: "draft-0.2.0";
+  schemaVersion: "0.3.0" | "draft-0.2.0";
   kind: "character-template";
   templateId: string;
   revision: number;

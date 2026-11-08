@@ -277,3 +277,133 @@ test("a provider budget exception never triggers a second paid generation", asyn
     opened.value.close();
   }
 });
+
+test("selected 16KB policy retains typed reflection, full world reports and relationship revisions", async () => {
+  const opened = openSQLiteMemory(":memory:");
+  assert.ok(opened.ok);
+  if (!opened.ok) return;
+  let calls = 0;
+  const client: ModelClient = {
+    id: "ollama",
+    async generate(input) {
+      calls++;
+      const prompt = JSON.parse(input.prompt);
+      const reflection = prompt.memoryReflection;
+      assert.ok(
+        reflection,
+        "reflection must fit the explicitly selected prompt policy",
+      );
+      assert.ok(
+        Buffer.byteLength(
+          JSON.stringify({
+            messages: [
+              { role: "system", content: input.system },
+              { role: "user", content: input.prompt },
+            ],
+            stream: false,
+            max_tokens: 1024,
+            response_format: { type: "json_schema", json_schema: input.schema },
+          }),
+        ) <= 16000,
+      );
+      if (calls === 2) {
+        assert.equal(
+          reflection.previous.find(
+            (p: { kind: string }) => p.kind === "subjective-belief",
+          ).value,
+          "Tentatively cooperative after reported help.",
+        );
+        assert.ok(
+          reflection.sources.some((s: { id: string }) =>
+            reflection.newSourceIds.includes(s.id),
+          ),
+        );
+      }
+      return {
+        ok: true,
+        value: {
+          content:
+            "The garden and card table reported your help; I feel cautiously encouraged.",
+          memoryUpdates: [
+            {
+              kind: "subjective-belief",
+              subjectId: "character:seed",
+              targetId: reflection.playerSubjectId,
+              key: "cooperation",
+              value:
+                calls === 1
+                  ? "Tentatively cooperative after reported help."
+                  : "Cooperation now requires more caution.",
+              confidence: calls === 1 ? 0.6 : 0.45,
+              reason:
+                calls === 1
+                  ? "Two different worlds reported helpful outcomes."
+                  : "A new report contradicts the earlier cooperative pattern.",
+              sourceIds: reflection.sources.map((s: { id: string }) => s.id),
+              evidenceQuote: reflection.sources[0].excerpt,
+            },
+          ],
+        },
+      };
+    },
+  };
+  const entry = request("local-relationship");
+  entry.context = "How do you feel about our cooperation?";
+  entry.history = [
+    {
+      ...entry.history[0]!,
+      id: "help-garden",
+      summary: "The player returned Seed's dropped seed packet.",
+      reportedClaims: [],
+    },
+    {
+      ...entry.history[0]!,
+      hostId: "cards",
+      id: "help-cards",
+      summary: "The player explained the card rules to Seed patiently.",
+      reportedClaims: [],
+    },
+  ];
+  try {
+    await runBridgeRequest(entry, client, "synthetic-model", opened.value, {
+      promptBudgetBytes: 16000,
+    });
+    assert.equal(calls, 1);
+    const reflection = inspectBridgeMemory(
+      opened.value,
+      "shared-memory",
+    ).reflection;
+    assert.equal(reflection.status, "ready");
+    assert.equal(reflection.relationships.length, 1);
+    assert.equal(reflection.relationships[0]!.confidence, 0.6);
+    assert.equal(
+      new Set(reflection.relationships[0]!.sources.map((s) => s.hostId)).size,
+      2,
+    );
+    const contrary = request("local-revision");
+    contrary.history = [
+      {
+        ...contrary.history[0]!,
+        id: "broken-promise",
+        summary:
+          "The player promised to keep Seed's seeds dry, then left them in rain.",
+        reportedClaims: [],
+      },
+    ];
+    await runBridgeRequest(contrary, client, "synthetic-model", opened.value, {
+      promptBudgetBytes: 16000,
+    });
+    assert.equal(calls, 2);
+    const revised = inspectBridgeMemory(opened.value, "shared-memory")
+      .reflection.relationships[0]!;
+    assert.equal(revised.id, reflection.relationships[0]!.id);
+    assert.equal(revised.revision, 2);
+    assert.equal(
+      revised.history[0]!.value,
+      "Tentatively cooperative after reported help.",
+    );
+    assert.equal(revised.confidence, 0.45);
+  } finally {
+    opened.value.close();
+  }
+});

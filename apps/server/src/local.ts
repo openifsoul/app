@@ -1,3 +1,9 @@
+import { trustedLocalRequest } from "./app-auth.js";
+import {
+  resolveAppResourcePolicy,
+  httpBodyBudget,
+  type AppResourceConfiguration,
+} from "./resource-policy.js";
 import { runBridgeRequest, observeBridgeRequest } from "./bridge.js";
 import { createCharacterWorkspace } from "../../runtime-host/src/characters.js";
 import { createServer } from "node:http";
@@ -29,6 +35,25 @@ import {
   type ProviderOption,
 } from "./api.js";
 import { secured } from "./security.js";
+let resourceConfiguration: AppResourceConfiguration = {};
+if (process.env.IFSOUL_RESOURCE_POLICY_FILE) {
+  try {
+    resourceConfiguration = JSON.parse(
+      readFileSync(process.env.IFSOUL_RESOURCE_POLICY_FILE, "utf8"),
+    );
+  } catch {
+    throw Error("The local resource policy file could not be read as JSON.");
+  }
+}
+if (process.env.IFSOUL_OLLAMA_PROMPT_BUDGET_BYTES !== undefined)
+  resourceConfiguration = {
+    ...resourceConfiguration,
+    ollama: {
+      ...resourceConfiguration.ollama,
+      promptBytes: Number(process.env.IFSOUL_OLLAMA_PROMPT_BUDGET_BYTES),
+    },
+  };
+const resourcePolicy = resolveAppResourcePolicy(resourceConfiguration);
 const directory = resolve(process.env.IFSOUL_DATA_DIR ?? ".local/server");
 mkdirSync(directory, { recursive: true, mode: 0o700 });
 const credentialPath = resolve(directory, "owner.json");
@@ -67,10 +92,34 @@ const store: PrivateStore = {
     privateDB.prepare("DELETE FROM settings WHERE key=?").run(key);
   },
 };
-const ollama = createOllamaProvider({
+const ollamaOptions = {
   baseUrl: process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
-  limits: { timeoutMs: 55000 },
+  limits: resourcePolicy.ollama.provider.effective,
+  budgetPolicy: resourcePolicy.ollama.budgetPolicy,
+};
+const ollama = createOllamaProvider(ollamaOptions);
+const compactOllama = createOllamaProvider({
+  ...ollamaOptions,
+  limits: {
+    ...ollamaOptions.limits,
+    maxOutputTokens: Math.min(
+      768,
+      resourcePolicy.ollama.provider.effective.maxOutputTokens,
+    ),
+  },
 });
+const localOllamaClient: typeof ollama = {
+  ...ollama,
+  generate(input) {
+    const properties = input.schema.properties;
+    return resourcePolicy.ollama.compactReflection &&
+      properties &&
+      typeof properties === "object" &&
+      "memoryUpdates" in properties
+      ? compactOllama.generate(input)
+      : ollama.generate(input);
+  },
+};
 const providers = async (): Promise<ProviderOption[]> => {
   const installed = await ollama.listModels(AbortSignal.timeout(3000));
   return [
@@ -110,7 +159,7 @@ const providers = async (): Promise<ProviderOption[]> => {
 const clientFor = async (
   selection: import("@ifsoul/core/model-providers/types").ProviderSelection,
 ) => {
-  if (selection.provider === "ollama") return ollama;
+  if (selection.provider === "ollama") return localOllamaClient;
   if (selection.provider === "openai") {
     const apiKey = await readOpenAIKey(store, secrets.encryptionKey);
     if (apiKey) return createOpenAIProvider({ apiKey });
@@ -120,6 +169,8 @@ const clientFor = async (
 const service = createCharacterWorkspace({
   memory,
   chatEnvironment: "app",
+  runtimeLimits: resourcePolicy.runtime.effective,
+  runtimeCeilings: resourcePolicy.runtimeCeilings,
   clientFor,
   controllerFor: (selection) => async (input, signal) =>
     selection.provider === "scenario"
@@ -128,12 +179,31 @@ const service = createCharacterWorkspace({
           client: await clientFor(selection),
           model: selection.model,
           promptBudgetBytes:
-            selection.provider === "ollama" ? 10_000 : undefined,
-          reflection: { memory },
+            selection.provider === "ollama"
+              ? resourcePolicy.ollama.promptBytes
+              : undefined,
+          promptBudgetCeilingBytes:
+            selection.provider === "ollama"
+              ? resourcePolicy.ollama.promptCeilingBytes
+              : undefined,
+          compactOutput:
+            selection.provider === "ollama" &&
+            resourcePolicy.ollama.compactReflection,
+          reflection: {
+            memory,
+            ...(selection.provider === "ollama"
+              ? {
+                  sourceBudgetBytes:
+                    resourcePolicy.ollama.reflectionSourceBytes,
+                  maxSources: resourcePolicy.ollama.reflectionSources,
+                }
+              : {}),
+          },
         })(input, signal),
 });
 const api = createAPI({
   mode: "local",
+  resourcePolicy,
   access: {
     kind: "local",
     origin: `http://127.0.0.1:${Number(process.env.PORT ?? 8788)}`,
@@ -144,7 +214,10 @@ const api = createAPI({
   service,
   providers,
   observeBridge: (body) => {
-    observeBridgeRequest(body, memory);
+    observeBridgeRequest(body, memory, {
+      bridgeLimits: resourcePolicy.bridge,
+      retainedHistoryEntries: resourcePolicy.retainedHistoryEntries,
+    });
   },
   bridge: async (body, selection) =>
     runBridgeRequest(
@@ -153,9 +226,31 @@ const api = createAPI({
       selection.model,
       memory,
       {
+        bridgeLimits: resourcePolicy.bridge,
+        retainedHistoryEntries: resourcePolicy.retainedHistoryEntries,
+        runtimeLimits: resourcePolicy.runtime.effective,
+        runtimeCeilings: resourcePolicy.runtimeCeilings,
+        generationTimeoutCeilingMs:
+          selection.provider === "ollama"
+            ? resourcePolicy.ollama.provider.effective.timeoutMs
+            : undefined,
+        promptBudgetCeilingBytes:
+          selection.provider === "ollama"
+            ? resourcePolicy.ollama.promptCeilingBytes
+            : undefined,
+        compactOutput:
+          selection.provider === "ollama" &&
+          resourcePolicy.ollama.compactReflection,
+        reflectionSourceBytes: resourcePolicy.ollama.reflectionSourceBytes,
+        reflectionSources: resourcePolicy.ollama.reflectionSources,
         generationTimeoutMs:
-          selection.provider === "ollama" ? 50_000 : undefined,
-        promptBudgetBytes: selection.provider === "ollama" ? 10_000 : undefined,
+          selection.provider === "ollama"
+            ? resourcePolicy.ollama.generationTimeoutMs
+            : undefined,
+        promptBudgetBytes:
+          selection.provider === "ollama"
+            ? resourcePolicy.ollama.promptBytes
+            : undefined,
       },
     ),
 });
@@ -177,25 +272,74 @@ const mime: Record<string, string> = {
 const server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) {
-      res.writeHead(403);
+      res.writeHead(403, { Connection: "close" });
       res.end("Open IfSoul App using its loopback address.");
+      return;
+    }
+    const pathname = new URL(req.url ?? "/", origin).pathname;
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(",") : v);
+    }
+    if (
+      pathname.startsWith("/api/") &&
+      !trustedLocalRequest(
+        new Request(new URL(req.url ?? "/", origin), {
+          method: req.method,
+          headers,
+        }),
+        origin,
+      )
+    ) {
+      res.writeHead(403, { Connection: "close" });
+      res.end("Open the App on its loopback address.");
+      return;
+    }
+    const bodyLimit = httpBodyBudget(
+      resourcePolicy,
+      pathname,
+      req.method ?? "GET",
+    );
+    if (Number(req.headers["content-length"]) > bodyLimit) {
+      res.writeHead(413, {
+        "Content-Type": "application/json",
+        Connection: "close",
+      });
+      res.end(
+        JSON.stringify({
+          ok: false,
+          error: {
+            code: "budget-exceeded",
+            layer: "http-ingress",
+            message: "The request exceeds the configured HTTP byte budget.",
+          },
+        }),
+      );
       return;
     }
     let size = 0;
     const chunks: Buffer[] = [];
-    for await (const chunk of req) {
+    for await (const chunk of req.iterator({ destroyOnReturn: false })) {
       const b = Buffer.from(chunk);
       size += b.length;
-      if (size > (req.url === "/api/characters/import" ? 70000 : 16384)) {
-        res.writeHead(413);
-        res.end();
+      if (size > bodyLimit) {
+        res.writeHead(413, {
+          "Content-Type": "application/json",
+          Connection: "close",
+        });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: {
+              code: "budget-exceeded",
+              layer: "http-ingress",
+              message: "The request exceeds the configured HTTP byte budget.",
+            },
+          }),
+        );
         return;
       }
       chunks.push(b);
-    }
-    const headers = new Headers();
-    for (const [k, v] of Object.entries(req.headers)) {
-      if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(",") : v);
     }
     const request = new Request(new URL(req.url ?? "/", origin), {
       method: req.method,
@@ -240,8 +384,8 @@ const server = createServer(async (req, res) => {
     );
   }
 });
-server.requestTimeout = 65000;
-server.headersTimeout = 10000;
+server.requestTimeout = resourcePolicy.http.requestTimeoutMs;
+server.headersTimeout = resourcePolicy.http.headersTimeoutMs;
 server.listen(port, "127.0.0.1", () => {
   console.log(`IfSoul App (local): ${origin}`);
   console.log("Local-only access: no account or password prompt.");

@@ -16,6 +16,7 @@ export interface RuntimeConfig {
   mode: "local" | "cloud";
   auth: string;
   laboratory: boolean;
+  requestTimeoutMs?: number;
 }
 export interface RuntimeAuth {
   config: RuntimeConfig;
@@ -125,7 +126,11 @@ export function RuntimeBootstrap({
               typeof next.auth === "string" &&
               next.auth.length > 0)
           ) ||
-          typeof next.laboratory !== "boolean"
+          typeof next.laboratory !== "boolean" ||
+          (next.requestTimeoutMs !== undefined &&
+            (!Number.isSafeInteger(next.requestTimeoutMs) ||
+              next.requestTimeoutMs < 1 ||
+              next.requestTimeoutMs > 2147483647))
         )
           throw Error("Invalid configuration");
         if (!controller.signal.aborted) setConfig(next);

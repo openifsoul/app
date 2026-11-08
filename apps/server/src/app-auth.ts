@@ -20,10 +20,11 @@ export function trustedLocalRequest(
   const site = request.headers.get("sec-fetch-site");
   return site === null || ["same-origin", "none"].includes(site);
 }
-export function appConfig(mode: "local" | "cloud") {
+export function appConfig(mode: "local" | "cloud", requestTimeoutMs?: number) {
   return {
     mode,
     auth: mode === "local" ? "local" : "external",
     laboratory: mode === "local",
+    ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
   };
 }

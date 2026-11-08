@@ -118,6 +118,26 @@ export function ReflectionMemory({
             Reflection is pending. Received events remain available below.
           </p>
         )}
+        {reflection.status === "empty" && (
+          <p role="status" className="mt-2 text-xs">
+            No interpretations generated yet. Received experiences remain
+            available below.
+          </p>
+        )}
+        {reflection.status === "deferred" && (
+          <p role="status" className="mt-2 text-xs">
+            Interpretation was deferred because this interaction was too large.
+            Earlier interpretations and received experiences remain available.
+          </p>
+        )}
+        {reflection.status === "ready" &&
+          !reflection.facts.length &&
+          !reflection.relationships.length && (
+            <p role="status" className="mt-2 text-xs">
+              No grounded interpretation was proposed from the available
+              experiences.
+            </p>
+          )}
         {reflection.status === "failed" && (
           <p role="status" className="mt-2 text-xs">
             Derived memory could not be refreshed. Review the received events

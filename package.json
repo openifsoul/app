@@ -1,6 +1,6 @@
 {
   "name": "@ifsoul/app",
-  "version": "0.2.0-alpha.1",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "Self-hostable IfSoul App and reusable local/cloud UI",
@@ -12,12 +12,13 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/tooling/*.test.mjs && tsx --test tests/service/*.test.ts tests/server/*.test.ts tests/lab/*.test.ts",
-    "check": "pnpm typecheck && pnpm test",
+    "check": "pnpm check:version && pnpm typecheck && pnpm test",
     "build:web": "vite build --config apps/laboratory/vite.config.ts",
     "start": "tsx apps/server/src/local.ts",
     "lab": "tsx apps/runtime-host/src/cli.ts",
     "build:server": "tsc -p tsconfig.server.json",
-    "build": "pnpm build:server && pnpm build:web"
+    "build": "pnpm build:server && pnpm build:web",
+    "check:version": "node scripts/check-version.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.4",
@@ -38,7 +39,8 @@
     "vendor",
     "dist/server",
     "LICENSES",
-    "docs"
+    "docs",
+    "release.json"
   ],
   "sideEffects": [
     "**/*.css"
@@ -68,7 +70,7 @@
     "./ui/message": "./apps/laboratory/src/components/ui/message.tsx"
   },
   "dependencies": {
-    "@ifsoul/core": "file:vendor/ifsoul-core-0.2.0-alpha.1.tgz",
+    "@ifsoul/core": "file:vendor/ifsoul-core-0.3.0.tgz",
     "@fontsource-variable/ibm-plex-sans": "5.3.0",
     "@gsap/react": "2.1.2",
     "class-variance-authority": "0.7.1",
@@ -81,9 +83,11 @@
     "tailwind-merge": "3.7.0",
     "tailwindcss": "4.3.4",
     "ajv": "8.20.0",
-    "ajv-formats": "3.0.1"
+    "ajv-formats": "3.0.1",
+    "@ifsoul/adapter-sdk": "file:vendor/ifsoul-adapter-sdk-0.3.0.tgz"
   },
   "bundledDependencies": [
-    "@ifsoul/core"
+    "@ifsoul/core",
+    "@ifsoul/adapter-sdk"
   ]
 }

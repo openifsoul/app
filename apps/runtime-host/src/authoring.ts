@@ -16,7 +16,7 @@ export function profileTemplate(
   id: string,
 ): CharacterTemplate {
   return {
-    schemaVersion: "draft-0.2.0",
+    schemaVersion: "0.3.0",
     kind: "character-template",
     templateId: id,
     revision: 1,
@@ -113,4 +113,4 @@ export const CHARACTER_LIBRARY: CharacterTemplate[] = [
     "Tick is a fictional clock awakened in an abandoned observatory, hoping to learn why people count time.",
   ),
 ];
-export const EXTERNAL_AUTHORING_PROMPT = `Create a fictional character profile for IfSoul. Return one JSON object only, with no markdown. Use the exact structure below, replacing example values. Keep templateId an ASCII identifier up to 128 characters, revision 1. Name <= 128 characters, description <= 2000, speechStyle.description <= 500, biography <= 8000. Keep traits {}, preferences [], goals [], languages [] and habits [] unless you know the IfSoul draft-0.2.0 schema. Authored biography must have fictional:true. Preserve the user's requested adaptation, including amnesia or nonhuman form; do not present invented details as verified canon. Do not include conversations, lived events, credentials, account IDs, permissions or a character instance. Authorship is attribution, not proof of rights; do not claim ownership of third-party characters. Return a file named character.json for import.\n${JSON.stringify(profileTemplate(CHARACTER_LIBRARY[0]!.profile, "my-character"), null, 2)}\n\nUser's character brief:\n`;
+export const EXTERNAL_AUTHORING_PROMPT = `Create a fictional character profile for IfSoul. Return one JSON object only, with no markdown. Use the exact structure below, replacing example values. Keep templateId an ASCII identifier up to 128 characters, revision 1. Name <= 128 characters, description <= 2000, speechStyle.description <= 500, biography <= 8000. Keep traits {}, preferences [], goals [], languages [] and habits [] unless you know the IfSoul 0.3.0 schema. Authored biography must have fictional:true. Preserve the user's requested adaptation, including amnesia or nonhuman form; do not present invented details as verified canon. Do not include conversations, lived events, credentials, account IDs, permissions or a character instance. Authorship is attribution, not proof of rights; do not claim ownership of third-party characters. Return a file named character.json for import.\n${JSON.stringify(profileTemplate(CHARACTER_LIBRARY[0]!.profile, "my-character"), null, 2)}\n\nUser's character brief:\n`;

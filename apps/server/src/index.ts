@@ -15,3 +15,5 @@ export type {
   MemoryArchive,
   ArchivePreview,
 } from "../../runtime-host/src/memory-archive.js";
+
+export * from "./resource-policy.js";

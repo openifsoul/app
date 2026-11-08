@@ -1,3 +1,4 @@
+import { Ajv } from "ajv";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -657,6 +658,138 @@ test("legacy conflicting world opinions remain contextual and uncertain until so
       new Set(["garden", "dungeon"]),
     );
     assert.equal(reconciled.history.length, 2);
+  } finally {
+    memory.close();
+  }
+});
+
+test("context-budget deferral is distinct from unavailable or declined reflection and remains bounded", () => {
+  const memory = setup();
+  try {
+    observeBridgeRequest(
+      request("The player returned Seed's seed packet."),
+      memory,
+    );
+    const ref = prepareBridgeReflection(memory, "owner", "seed")!;
+    ref.complete(undefined, "budget-deferred");
+    const state = inspectBridgeMemory(memory, "owner").reflection;
+    assert.equal(state.status, "deferred");
+    assert.equal(state.relationships.length, 0);
+    assert.match(state.explanation!, /context budget/);
+    assert.equal(prepareBridgeReflection(memory, "owner", "seed"), undefined);
+    observeBridgeRequest(request("The player repaired Seed's basket."), memory);
+    const next = prepareBridgeReflection(memory, "owner", "seed")!;
+    assert.ok(next);
+    next.complete([]);
+    assert.equal(
+      inspectBridgeMemory(memory, "owner").reflection.status,
+      "ready",
+    );
+  } finally {
+    memory.close();
+  }
+});
+
+test("provider grammar forbids observed claim/trust mixture while permitting grounded typed claims, beliefs and decline", () => {
+  const memory = setup();
+  try {
+    observeBridgeRequest(request("The player chose tank."), memory);
+    const ref = prepareBridgeReflection(memory, "owner", "seed")!;
+    const validate = new Ajv({ strict: false }).compile(ref.schema);
+    const claim = { ...proposal(ref, "tank"), targetId: null };
+    assert.equal(validate([claim]), true, JSON.stringify(validate.errors));
+    const belief = {
+      ...proposal(ref, "Tentative trust.", "subjective-belief", "trust"),
+      targetId: ref.input.playerSubjectId,
+    };
+    assert.equal(validate([belief]), true, JSON.stringify(validate.errors));
+    assert.equal(validate([{ ...belief, kind: "reported-claim" }]), false);
+    assert.equal(
+      validate([{ ...claim, targetId: ref.input.playerSubjectId }]),
+      false,
+    );
+    assert.equal(
+      validate([{ ...belief, subjectId: ref.input.playerSubjectId }]),
+      false,
+    );
+    assert.equal(validate([]), true);
+    ref.complete([]);
+  } finally {
+    memory.close();
+  }
+});
+
+test("new citations alone do not manufacture a new version of an identical portable belief", () => {
+  const memory = setup();
+  try {
+    observeBridgeRequest(request("The player returned Seed's pouch."), memory);
+    let ref = prepareBridgeReflection(memory, "owner", "seed")!;
+    const initial = proposal(
+      ref,
+      "Tentative trust",
+      "subjective-belief",
+      "trust",
+    );
+    ref.complete([initial]);
+    const prior = inspectBridgeMemory(memory, "owner").reflection
+      .relationships[0]!;
+    observeBridgeRequest(
+      request("The player promised to return the seed packet but lost it."),
+      memory,
+    );
+    ref = prepareBridgeReflection(memory, "owner", "seed")!;
+    const changedCitationsOnly = {
+      ...initial,
+      sourceIds: [ref.input.sources[0]!.id],
+      evidenceQuote: ref.input.sources[0]!.excerpt.slice(0, 160),
+    };
+    ref.complete([changedCitationsOnly]);
+    const after = inspectBridgeMemory(memory, "owner").reflection;
+    assert.equal(after.relationships[0]!.revision, prior.revision);
+    assert.deepEqual(after.relationships[0]!.history, prior.history);
+    assert.deepEqual(after.relationships[0]!.sources, prior.sources);
+    assert.equal(after.status, "ready");
+    assert.equal(prepareBridgeReflection(memory, "owner", "seed"), undefined);
+  } finally {
+    memory.close();
+  }
+});
+
+test("a new grounded explanation can reassess contrary evidence without forcing trust or confidence to fall", () => {
+  const memory = setup();
+  try {
+    observeBridgeRequest(request("The player returned Seed's pouch."), memory);
+    let ref = prepareBridgeReflection(memory, "owner", "seed")!;
+    const initial = proposal(
+      ref,
+      "Tentative trust",
+      "subjective-belief",
+      "trust",
+    );
+    ref.complete([initial]);
+    const prior = inspectBridgeMemory(memory, "owner").reflection
+      .relationships[0]!;
+    observeBridgeRequest(
+      request(
+        "The player lost the loaned seeds, then apologized and helped search.",
+      ),
+      memory,
+    );
+    ref = prepareBridgeReflection(memory, "owner", "seed")!;
+    const update = {
+      ...proposal(ref, initial.value, "subjective-belief", "trust"),
+      reason:
+        "The loss raises caution about handoffs, while the apology preserves tentative trust.",
+    };
+    ref.complete([update]);
+    const revised = inspectBridgeMemory(memory, "owner").reflection
+      .relationships[0]!;
+    assert.equal(revised.id, prior.id);
+    assert.equal(revised.revision, 2);
+    assert.equal(revised.value, prior.value);
+    assert.equal(revised.confidence, prior.confidence);
+    assert.notEqual(revised.reason, prior.reason);
+    assert.equal(revised.history[0]!.reason, prior.reason);
   } finally {
     memory.close();
   }

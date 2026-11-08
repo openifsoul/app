@@ -58,9 +58,21 @@ export async function authenticatedFetch(
 /** Same-origin only. Credentials never enter URLs, logs or browser storage. */
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+  options: {
+    method?: string;
+    body?: unknown;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  } = {},
 ): Promise<T> {
-  const timeout = AbortSignal.timeout(60_000);
+  const timeoutMs = options.timeoutMs ?? 60000;
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs < 1 ||
+    timeoutMs > 2147483647
+  )
+    throw new ApiError("configuration");
+  const timeout = AbortSignal.timeout(timeoutMs);
   try {
     const response = await authenticatedFetch(`/api/${path}`, {
       method: options.method ?? "GET",
@@ -128,6 +140,8 @@ export function friendlyError(error: unknown): string {
       "This request no longer matches the saved attempt. Refresh the workspace before retrying.",
     "database-owned":
       "Another local session is using this memory store. Close it and try again.",
+    "unsupported-policy":
+      "This runtime cannot support the requested resource policy. Your work is safe; choose a supported connection or contact the host.",
     "budget-exceeded":
       "This request exceeded the workspace limit. Shorten the message or try another provider.",
   };

@@ -1,0 +1,16 @@
+{
+  "version": "0.3.0",
+  "current": {
+    "protocol": "0.3.0",
+    "modelProvider": "0.3.0",
+    "bridge": "ifsoul-bridge/0.3.0",
+    "bridgeResourcePolicy": "ifsoul-bridge-resource-policy/0.3.0",
+    "appResourcePolicy": "ifsoul-app-resource-policy/0.3.0",
+    "appMemory": "ifsoul-app-memory/0.3.0"
+  },
+  "legacy": {
+    "protocol": ["draft-0.1.0", "draft-0.2.0"],
+    "bridge": ["ifsoul-bridge/0.1"],
+    "appMemory": ["ifsoul-app-memory/0.1"]
+  }
+}
