@@ -2,8 +2,8 @@
   "package": "@ifsoul/core",
   "version": "0.3.0",
   "repository": "https://github.com/openifsoul/core",
-  "commit": "b5722adba5475c0739366f8325a363ebd115c905",
-  "sourceInventorySHA256": "feeb609ed9583d15a6e51326c6f298faa8753c70259878752ce86b06341854e5",
+  "commit": "14f0e8991a48ca7d99c40af2a78b0e67a59909c8",
+  "sourceInventorySHA256": "1188421d0aabf0b36901949b5e2d40e0ff49cebedfdbaf3e9c9d69bbc7292081",
   "paths": [
     ".agents/skills/architecture-review/SKILL.md",
     ".agents/skills/clean-implementation/SKILL.md",
