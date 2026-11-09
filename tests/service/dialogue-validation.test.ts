@@ -29,7 +29,7 @@ for (const content of malformed)
       const c = character();
       unwrap(memory.putCharacter(c));
       recordBridgeRequest(memory, c.characterId, {
-        version: "ifsoul-bridge/0.1",
+        version: "ifsoul-bridge/0.4.0",
         hostId: "original-garden",
         character: {
           id: c.characterId,

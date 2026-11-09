@@ -334,7 +334,7 @@ export function resolveAppResourcePolicy(
       } satisfies ProviderBudgetPolicy,
     },
     metadata: {
-      version: "ifsoul-app-resource-policy/0.3.0",
+      version: "ifsoul-app-resource-policy/0.4.0",
       bridge: bridgeCapabilities(bridge),
       http: {
         ...http,

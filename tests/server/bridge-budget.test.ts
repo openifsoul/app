@@ -4,7 +4,7 @@ import { openSQLiteMemory } from "@ifsoul/core/memory/sqlite";
 import type { ModelClient } from "@ifsoul/core/model-providers/types";
 import { runBridgeRequest } from "../../apps/server/src/bridge.js";
 const request = {
-  version: "ifsoul-bridge/0.1" as const,
+  version: "ifsoul-bridge/0.4.0" as const,
   hostId: "synthetic-host",
   character: { id: "budget-test", name: "Test", temperament: "careful" },
   requestId: "budget",
@@ -101,7 +101,7 @@ test("maximum accepted temperament and a fresh independent memory owner fit the 
     const result = await runBridgeRequest(
       {
         ...request,
-        version: "ifsoul-bridge/0.3.0",
+        version: "ifsoul-bridge/0.4.0",
         memoryId: "fresh-owner",
         character: { id: "unseen-portrayal", name: "Original", temperament },
       },
@@ -125,7 +125,7 @@ test("maximum accepted temperament and a fresh independent memory owner fit the 
     if (!stored.ok || !stored.value) return;
     assert.equal(stored.value.profile.traits.temperament, temperament);
     assert(stored.value.profile.speechStyle.description.length <= 500);
-    assert.equal(stored.value.schemaVersion, "0.3.0");
+    assert.equal(stored.value.schemaVersion, "0.4.0");
   } finally {
     memory.close();
   }

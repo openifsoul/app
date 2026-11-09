@@ -67,7 +67,7 @@ export async function scenarioController(
   if (input.operation === "plan") return proposedPlan();
   const request = object(input.request);
   return {
-    schemaVersion: "0.3.0",
+    schemaVersion: "0.4.0",
     kind: "conversation-response",
     binding: request.binding,
     requestId: request.requestId,

@@ -18,7 +18,7 @@ import { prepareBridgeReflection } from "../../apps/runtime-host/src/bridge-refl
 let n = 0;
 function request(summary: string, owner = "owner"): BridgeRequest {
   return {
-    version: "ifsoul-bridge/0.1",
+    version: "ifsoul-bridge/0.4.0",
     hostId: "garden",
     memoryId: owner,
     character: { id: "seed", name: "Seed", temperament: "curious" },

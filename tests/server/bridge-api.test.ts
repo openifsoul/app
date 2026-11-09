@@ -55,7 +55,7 @@ test("generic bridge route requires trusted local origin and an explicit availab
       ),
   });
   const body = {
-    version: "ifsoul-bridge/0.1",
+    version: "ifsoul-bridge/0.4.0",
     hostId: "orbital-observatory",
     character: {
       id: "lumen",
@@ -83,6 +83,20 @@ test("generic bridge route requires trusted local origin and an explicit availab
       body: JSON.stringify(body),
     });
   try {
+    for (const version of [
+      "ifsoul-bridge/0.1",
+      "ifsoul-bridge/0.3.0",
+      "ifsoul-bridge/9.9",
+      "ifsoul-app-memory/0.4.0",
+    ]) {
+      const base = request();
+      const response = await api(
+        new Request(base, { body: JSON.stringify({ ...body, version }) }),
+      );
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error.code, "unsupported-version");
+      assert.equal(calls, 0);
+    }
     assert.equal(
       (await api(request(undefined, "https://foreign.example"))).status,
       403,
@@ -100,13 +114,13 @@ test("generic bridge route requires trusted local origin and an explicit availab
       "The orbital observatory is a new host.",
     );
     assert.equal(calls, 1);
-    body.version = "ifsoul-bridge/0.3.0";
+    body.version = "ifsoul-bridge/0.4.0";
     body.requestId = "fourth-host-current";
     const current = await api(request());
     assert.equal(current.status, 200);
     assert.equal((await current.json()).source, "llm");
     assert.equal(calls, 2);
-    for (const version of ["ifsoul-bridge/9.9", "ifsoul-app-memory/0.3.0"]) {
+    for (const version of ["ifsoul-bridge/9.9", "ifsoul-app-memory/0.4.0"]) {
       body.version = version;
       const unsupported = await api(request());
       assert.equal(unsupported.status, 400);
@@ -161,7 +175,7 @@ test("bridge rechecks serialization after delayed body parsing and observations 
   });
   const make = (
     path = "/api/bridge?provider=ollama&model=test",
-    body: BodyInit = JSON.stringify({ version: "ifsoul-bridge/0.3.0" }),
+    body: BodyInit = JSON.stringify({ version: "ifsoul-bridge/0.4.0" }),
   ) =>
     new Request("http://127.0.0.1:8788" + path, {
       method: "POST",
@@ -185,7 +199,7 @@ test("bridge rechecks serialization after delayed body parsing and observations 
     while (!active) await new Promise((r) => setTimeout(r, 1));
     feed.enqueue(
       new TextEncoder().encode(
-        JSON.stringify({ version: "ifsoul-bridge/0.3.0" }),
+        JSON.stringify({ version: "ifsoul-bridge/0.4.0" }),
       ),
     );
     feed.close();

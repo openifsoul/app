@@ -35,7 +35,7 @@ const value = <T>(r: Result<T>): T => {
   return r.value;
 };
 const request = (owner: string, character: string, n = 0): BridgeRequest => ({
-  version: "ifsoul-bridge/0.1",
+  version: "ifsoul-bridge/0.4.0",
   hostId: "original-garden",
   memoryId: owner,
   character: { id: character, name: "Original", temperament: "curious" },
@@ -259,6 +259,26 @@ test("version, checksum, size, foreign owner and missing profile references fail
       { ...archive, sha256: "0".repeat(64) },
       { ...archive, padding: "x".repeat(2_000_001) },
     ];
+    for (const schemaVersion of [
+      "draft-0.1.0",
+      "draft-0.2.0",
+      "0.3.0",
+      "0.5.0",
+      "ifsoul-bridge/0.4.0",
+    ]) {
+      for (const target of ["character", "event"] as const) {
+        const broken = structuredClone(archive) as any;
+        const envelope =
+          target === "character"
+            ? broken.payload.characters[0]
+            : broken.payload.events[0];
+        envelope.schemaVersion = schemaVersion;
+        broken.sha256 = createHash("sha256")
+          .update(canonical(broken.payload))
+          .digest("hex");
+        cases.push(broken);
+      }
+    }
     for (const foreign of [true, false]) {
       const broken = structuredClone(archive);
       if (foreign) broken.payload.events[0]!.characterId = IDS.character;

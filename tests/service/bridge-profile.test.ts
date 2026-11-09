@@ -49,7 +49,7 @@ test("arbitrary host preserves the stored authored profile independently of memo
     let calls = 0;
     await runBridgeRequest(
       {
-        version: "ifsoul-bridge/0.1",
+        version: "ifsoul-bridge/0.4.0",
         hostId: "orbital-observatory",
         memoryId: "separate-memory",
         language: "fr",

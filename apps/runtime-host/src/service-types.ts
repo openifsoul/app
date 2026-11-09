@@ -132,9 +132,9 @@ export interface CharacterWorkspace extends LabService {
   ): Promise<Result<CharacterTemplate>>;
 }
 
-/** Laboratory source type for the current and supported legacy template schemas. */
+/** Laboratory source type for the current template schema. */
 export interface CharacterTemplate {
-  schemaVersion: "0.3.0" | "draft-0.2.0";
+  schemaVersion: "0.4.0";
   kind: "character-template";
   templateId: string;
   revision: number;

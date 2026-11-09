@@ -140,7 +140,7 @@ export function bridgeMemoryEvent(
   const character = owner(memory, memoryId);
   if (!character) throw Error("Memory owner missing");
   return {
-    schemaVersion: "0.3.0",
+    schemaVersion: "0.4.0",
     kind: "memory-event",
     memoryId: id,
     characterId: memoryId,

@@ -111,7 +111,7 @@ export function CharacterWorkshop({
       if (
         !t ||
         t.kind !== "character-template" ||
-        !["0.3.0", "draft-0.2.0"].includes(t.schemaVersion) ||
+        t.schemaVersion !== "0.4.0" ||
         typeof t.profile?.name !== "string" ||
         typeof t.profile?.description !== "string" ||
         typeof t.profile?.authoredBiography?.text !== "string" ||

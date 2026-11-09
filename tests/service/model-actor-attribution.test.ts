@@ -18,7 +18,7 @@ test("App's packed local-model prompt preserves historical actors separately fro
     const c = character();
     assert.ok(memory.putCharacter(c).ok);
     recordBridgeRequest(memory, c.characterId, {
-      version: "ifsoul-bridge/0.1",
+      version: "ifsoul-bridge/0.4.0",
       hostId: "garden",
       requestId: "synthetic-actors",
       character: {

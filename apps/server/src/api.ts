@@ -192,7 +192,7 @@ export function createAPI(options: APIOptions) {
     if (path === "/api/resource-policy" && request.method === "GET")
       return Response.json(
         options.resourcePolicy?.metadata ?? {
-          version: "ifsoul-app-resource-policy/0.3.0",
+          version: "ifsoul-app-resource-policy/0.4.0",
           bridge: bridgeCapabilities(),
           model: { context: "composition-controlled", accounting: "unknown" },
           http: {
@@ -210,15 +210,8 @@ export function createAPI(options: APIOptions) {
       const body = await readBody();
       if (!body || typeof body !== "object" || Array.isArray(body))
         return error("invalid-request", "Enter a bounded bridge request.");
-      if (
-        !["ifsoul-bridge/0.1", "ifsoul-bridge/0.3.0"].includes(
-          (body as { version: string }).version,
-        )
-      )
-        return error(
-          "unsupported-version",
-          "Use a supported IfSoul bridge version (0.3.0 or legacy 0.1).",
-        );
+      if ((body as { version: unknown }).version !== "ifsoul-bridge/0.4.0")
+        return error("unsupported-version", "Use IfSoul bridge version 0.4.0.");
       options.observeBridge(body as BridgeRequest);
       return Response.json({ ok: true });
     }
@@ -247,15 +240,8 @@ export function createAPI(options: APIOptions) {
       const body = await readBody();
       if (!body || typeof body !== "object" || Array.isArray(body))
         return error("invalid-request", "Enter a bounded bridge request.");
-      if (
-        !["ifsoul-bridge/0.1", "ifsoul-bridge/0.3.0"].includes(
-          (body as { version: string }).version,
-        )
-      )
-        return error(
-          "unsupported-version",
-          "Use a supported IfSoul bridge version (0.3.0 or legacy 0.1).",
-        );
+      if ((body as { version: unknown }).version !== "ifsoul-bridge/0.4.0")
+        return error("unsupported-version", "Use IfSoul bridge version 0.4.0.");
       if (busy)
         return error(
           "busy",

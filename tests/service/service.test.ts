@@ -497,7 +497,7 @@ test("model prompt projects bounded authoritative evidence without changing dura
     id: string,
     payload: Record<string, unknown>,
   ): MemoryEvent => ({
-    schemaVersion: "draft-0.2.0",
+    schemaVersion: "0.4.0",
     kind: "memory-event",
     memoryId: id,
     characterId: IDS.character,
@@ -554,7 +554,7 @@ test("model prompt projects bounded authoritative evidence without changing dura
   ];
   const before = structuredClone(memories);
   const requestDocument = {
-    schemaVersion: "draft-0.2.0" as const,
+    schemaVersion: "0.4.0" as const,
     kind: "conversation-request" as const,
     binding: profile("chat").binding,
     requestId: "prompt-check",

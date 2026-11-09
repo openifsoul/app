@@ -70,7 +70,7 @@ test("App author UUIDs and full reported outcomes fit relationship generation an
   };
   const observe = (hostId: string, id: string, summary: string) =>
     recordBridgeRequest(memory, profile.characterId, {
-      version: "ifsoul-bridge/0.1",
+      version: "ifsoul-bridge/0.4.0",
       hostId,
       memoryId: profile.characterId,
       character: {

@@ -30,12 +30,16 @@ export function createCharacterWorkspace(
   options: LabServiceOptions,
 ): CharacterWorkspace {
   const { memory } = options;
+  // Detect unsupported owner records before creating any default workspace state.
+  const catalog = memory.listCharacters(100);
   const existingStarter = memory.getCharacter(IDS.character);
-  const initial = !existingStarter.ok
-    ? existingStarter
-    : existingStarter.value
-      ? success(existingStarter.value)
-      : memory.putCharacter(character());
+  const initial = !catalog.ok
+    ? catalog
+    : !existingStarter.ok
+      ? existingStarter
+      : existingStarter.value
+        ? success(existingStarter.value)
+        : memory.putCharacter(character());
   const load = (id = IDS.character as string, memoryId = id) => {
     if (!initial.ok) return initial;
     if (
@@ -159,7 +163,7 @@ export function createCharacterWorkspace(
           "This laboratory supports up to 50 characters.",
         );
       const document: CharacterInstance = {
-        schemaVersion: "0.3.0",
+        schemaVersion: "0.4.0",
         kind: "character-instance",
         characterId: id,
         participantId: `participant-${draft.requestId}`,
@@ -233,7 +237,7 @@ export function createCharacterWorkspace(
           "This laboratory supports up to 50 characters.",
         );
       const document: CharacterInstance = {
-        schemaVersion: "0.3.0",
+        schemaVersion: "0.4.0",
         kind: "character-instance",
         characterId: id,
         participantId: `participant-${request.requestId}`,

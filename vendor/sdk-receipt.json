@@ -1,14 +1,13 @@
 {
   "package": "@ifsoul/adapter-sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "repository": "https://github.com/openifsoul/sdk",
-  "commit": "f89ee235b88401ed4e3ace9ffc1d3251c3841631",
-  "sourceInventorySHA256": "488a148737247f42f6c631e95e280ca10937cd0cbbe0b30af5a5b15106495669",
+  "commit": "6c2a127f7e2b2ff045d486740f12996daa6d477d",
+  "sourceInventorySHA256": "a940969035e947db8ade52fd26a4c0f564e21d6edadb975a9ddae03e76a19652",
   "paths": [
     ".github/workflows/checks.yml",
     ".gitignore",
     ".npmrc",
-    "AGENTS.md",
     "LICENSE",
     "README.md",
     "SECURITY.md",
@@ -35,6 +34,6 @@
     "tsconfig.build.json",
     "tsconfig.json"
   ],
-  "sourceState": "Clean reviewed source commit; locally built and validated. No npm registry publication.",
-  "sha256": "7d0ac3af3d9400d9bf5a3afa719f6d2ce24e55e99f53b402c978304f15ee1266"
+  "sourceState": "clean",
+  "sha256": "2d1f7c0f897be4270262b8d5a29e0e2e11826569bf4091e5be1faef40b58afa9"
 }

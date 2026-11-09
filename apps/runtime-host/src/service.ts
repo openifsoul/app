@@ -57,7 +57,7 @@ import type {
 export type * from "./service-types.js";
 
 export const SCENARIO_MODEL = "synthetic-v1";
-const schemaEnvelope = { schemaVersion: "0.3.0" as const };
+const schemaEnvelope = { schemaVersion: "0.4.0" as const };
 const obj = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

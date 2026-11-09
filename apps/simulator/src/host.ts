@@ -44,7 +44,7 @@ export class SyntheticHost {
       (task) => task.decision === "accepted",
     ).length;
     return {
-      schemaVersion: "0.3.0",
+      schemaVersion: "0.4.0",
       kind: "plan-decision",
       binding: plan.binding,
       correlationId: plan.correlationId,
@@ -69,7 +69,7 @@ export class SyntheticHost {
     const inspectedBeds = this.uninspectedBeds;
     this.uninspectedBeds = 0;
     return {
-      schemaVersion: "0.3.0",
+      schemaVersion: "0.4.0",
       kind: "task-report",
       binding: plan.binding,
       correlationId: plan.correlationId,

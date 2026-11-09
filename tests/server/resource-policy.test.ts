@@ -33,7 +33,7 @@ const incoming = (path: string, body?: unknown) =>
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 const batch: BridgeRequest = {
-  version: "ifsoul-bridge/0.1",
+  version: "ifsoul-bridge/0.4.0",
   hostId: "original-garden",
   memoryId: "resource-character",
   character: { id: "resource-character", name: "Mira", temperament: "careful" },

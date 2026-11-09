@@ -184,7 +184,7 @@ export async function runLaboratory(options: LabOptions) {
           : {}),
       });
       const delivery = {
-        schemaVersion: "0.3.0" as const,
+        schemaVersion: "0.4.0" as const,
         kind: "conversation-delivery" as const,
         binding: response.binding,
         requestId: response.requestId,

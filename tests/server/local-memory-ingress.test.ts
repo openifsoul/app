@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawn } from "node:child_process";
+import { request as httpRequest } from "node:http";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -100,13 +101,52 @@ test("local HTTP ingress accepts bounded archive envelopes and retains other cap
     );
     assert.equal(imported.status, 200);
     assert.ok((await imported.json()).ok);
-    assert.equal(
-      (await post("/api/memory/preview", {}, 2_010_001)).status,
-      413,
-    );
-    assert.equal((await post("/api/memory/import", {}, 2_010_001)).status, 413);
-    assert.equal((await post("/api/run", {}, 20_000)).status, 413);
-    assert.equal((await post("/api/memory/new", {}, 20_000)).status, 413);
+    // Exercise the pre-body Content-Length guard without racing an upload
+    // against the server's intentional Connection: close. Streaming caps have
+    // separate route tests; this must still prove the real adapter's exact413.
+    for (const [path, bytes] of [
+      ["/api/memory/preview", 2010001],
+      ["/api/memory/import", 2010001],
+      ["/api/run", 20000],
+      ["/api/memory/new", 20000],
+    ] as const) {
+      await new Promise<void>((resolve, reject) => {
+        const request = httpRequest(
+          origin + path,
+          {
+            method: "POST",
+            headers: {
+              origin,
+              "Content-Type": "application/json",
+              "Content-Length": bytes,
+            },
+          },
+          (response) => {
+            const chunks: Buffer[] = [];
+            response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+            response.on("error", reject);
+            response.on("end", () => {
+              try {
+                assert.equal(response.statusCode, 413, path);
+                const body = JSON.parse(Buffer.concat(chunks).toString());
+                assert.equal(body.error.code, "budget-exceeded", path);
+                assert.equal(body.error.layer, "http-ingress", path);
+                resolve();
+              } catch (error) {
+                reject(error);
+              } finally {
+                request.destroy();
+              }
+            });
+          },
+        );
+        request.on("error", reject);
+        request.setTimeout(5000, () =>
+          request.destroy(new Error(`No ingress response: ${path}`)),
+        );
+        request.flushHeaders();
+      });
+    }
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit");

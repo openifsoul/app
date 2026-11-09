@@ -88,8 +88,8 @@ test("public App has no private/account package, sibling import or browser backe
   }
 });
 for (const [label, stem, receiptFile] of [
-  ["Core", "ifsoul-core-0.3.0", "core-receipt.json"],
-  ["SDK", "ifsoul-adapter-sdk-0.3.0", "sdk-receipt.json"],
+  ["Core", "ifsoul-core-0.4.0", "core-receipt.json"],
+  ["SDK", "ifsoul-adapter-sdk-0.4.0", "sdk-receipt.json"],
 ]) {
   test(`pinned ${label} archive contains no local data, identity service, executable automation or secrets`, () => {
     const receipt = JSON.parse(

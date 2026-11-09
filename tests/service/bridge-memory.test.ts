@@ -29,7 +29,7 @@ function unwrap<T>(result: Result<T>): T {
 }
 let sequence = 0;
 const request = (overrides: Partial<BridgeRequest> = {}): BridgeRequest => ({
-  version: "ifsoul-bridge/0.1",
+  version: "ifsoul-bridge/0.4.0",
   hostId: "garden",
   memoryId: "shared-companion",
   character: { id: "garden-seed", name: "Seed", temperament: "curious" },

@@ -14,7 +14,7 @@ import {
 } from "../../apps/runtime-host/src/bridge-memory.js";
 
 const base: BridgeRequest = {
-  version: "ifsoul-bridge/0.1",
+  version: "ifsoul-bridge/0.4.0",
   hostId: "garden",
   memoryId: "shared-memory",
   character: { id: "mira", name: "Mira", temperament: "careful" },

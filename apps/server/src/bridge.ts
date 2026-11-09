@@ -130,7 +130,7 @@ function prepareBridgeRequest(
       );
   }
   if (
-    !["ifsoul-bridge/0.1", "ifsoul-bridge/0.3.0"].includes(request.version) ||
+    !["ifsoul-bridge/0.1", "ifsoul-bridge/0.4.0"].includes(request.version) ||
     !id(request.hostId) ||
     !id(request.character.id) ||
     !id(request.requestId) ||
@@ -223,7 +223,7 @@ function prepareBridgeRequest(
   }));
   const chunks = (value: string) => value.match(/[\s\S]{1,400}/g) ?? [];
   const character: CharacterInstance = {
-    schemaVersion: "0.3.0",
+    schemaVersion: "0.4.0",
     kind: "character-instance",
     characterId: memoryId,
     participantId: participant,
@@ -256,7 +256,7 @@ function prepareBridgeRequest(
   const session: TrustedSession = {
     character,
     profile: {
-      schemaVersion: "0.3.0",
+      schemaVersion: "0.4.0",
       kind: "environment-profile",
       binding,
       hostId: request.hostId,
@@ -299,7 +299,7 @@ function prepareBridgeRequest(
           : [],
     },
     context: {
-      schemaVersion: "0.3.0",
+      schemaVersion: "0.4.0",
       kind: "context-report",
       binding,
       reportId: "demo-context",
@@ -574,7 +574,7 @@ export async function runBridgeRequest(
       };
     }
     const result = await runtime.conversation({
-      schemaVersion: "0.3.0",
+      schemaVersion: "0.4.0",
       kind: "conversation-request",
       binding,
       requestId: internalRequestId,

@@ -61,11 +61,11 @@ hosts and App chat within one trusted owner store; role claims keep their world
 scope. Profiles and selected memory are independent. Models propose updates;
 trusted code validates sources and rejects stale writes.
 
-See [memory architecture](docs/memory.md) for the evidence-flow diagram, identity
-and reset boundaries, exact retention limits, local milestone evidence and
-remaining work. The current bounded continuity slice is locally validated;
-bounded filtered memory transfer now creates separate forks after validation;
-complete archives, same-identity restore and broader product UI E2E remain future work.
+See [memory architecture](docs/memory.md) for the evidence-flow diagram, identity,
+reset and retention boundaries. Memory import creates an untrusted filtered fork
+with a new identity, not a full backup or same-identity restore. Relationship
+interpretation and revision are model-dependent; validation and persistence checks
+do not establish reliable semantic reassessment.
 
 By default, local Ollama bridge requests allow 50 seconds for generation, within a 55-second
 runtime envelope. Other compositions retain the default 25-second generation
@@ -99,10 +99,7 @@ explicit SDK `language` selection still takes precedence.
 
 For runtime-only self-host configuration, safe capability metadata, separate byte/token/deadline budgets and unsupported large messages, see [resource budgets](docs/resource-budgets.md). The local 10,000-byte prompt bound is a configurable packing heuristic, not a model/provider limit.
 
-## Current release and compatibility
+## Compatibility
 
-The current coordinated release is **IfSoul 0.3.0**. Package, current-format and
-artifact identifiers share this release. Historical formats remain explicit
-compatibility inputs; matching release numbers do not make different format
-families interchangeable. See [compatibility](docs/compatibility.md).
-Registry publication and deployment are separate authorized release actions.
+The current IfSoul format is **0.4.0**. Matching version numbers do not make distinct format families interchangeable.
+See [compatibility](docs/compatibility.md) for identifiers, validation and archive semantics.

@@ -6,7 +6,7 @@ edit, account or hosted service is required. This file contains policy, not API
 keys. Invalid/unknown configuration fails safely before local data initialization.
 Request bodies, query strings, model output and imported history cannot set it.
 Managed compositions inject their own trusted policy; omitting it preserves their
-existing behavior and quotas. This work changes no Cloud quota or production data.
+existing behavior and quotas.
 
 ## Independent layers
 
@@ -97,7 +97,7 @@ truncate; incomplete output rejects instead of becoming a successful memory.
 
 `GET /api/resource-policy` exposes safe configured/effective metadata only after
 local-origin or authenticated-principal access. It advertises SDK capacity using
-`ifsoul-bridge-resource-policy/0.3.0` inside `ifsoul-app-resource-policy/0.3.0` metadata.
+`ifsoul-bridge-resource-policy/0.4.0` inside `ifsoul-app-resource-policy/0.4.0` metadata.
 It includes no credential, conversation, raw quota counter or authority grant.
 The SDK's built-in HTTP transport discovers this at runtime for explicitly
 increased limits; absent capability preserves legacy operation and rejects an
@@ -111,14 +111,14 @@ wait. They do not measure model generation or increase its deadline.
 Native and Fetch ingress check declared size and running chunk bytes before
 concatenation/JSON parsing. Overflow returns an exceeded-budget result; native
 connections close without draining an unbounded body. Unsupported implementation
-or frozen-contract capacity is distinct from an exceeded operator budget. The
+or structural-contract capacity is distinct from an exceeded operator budget. The
 old API behavior remains when no new policy is injected.
 
 This stage supports bounded **buffered JSON**, at most 64 MiB per serialized
 message. It explicitly rejects a 1 GiB request policy before buffering/fetch. It
 does not implement a streamed/chunked 1 GiB transport, nor prove that a model can
 consume a large HTTP body. Buffered parsing needs additional memory copies.
-Frozen Core conversation input/output remain at 4,000/2,000 characters; larger
+Current Core conversation input/output remain at 4,000/2,000 characters; larger
 transport limits cannot rewrite those schemas. App report windows can be raised
 to 128 per request; existing persistent retention remains bounded to 900,000
 bridge bytes and a 96,000-byte reflection snapshot. Retained-context omissions are

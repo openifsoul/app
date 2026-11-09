@@ -1,7 +1,5 @@
 # Bounded memory architecture
 
-The current bounded continuity milestone is implemented and locally validated
-(2026-11-06). This closes this slice, not the wider portable-memory product.
 App owns evidence ingestion, extractive episodes, recall and revisable
 interpretations. Core supplies scoped transactional storage and runtime/provider
 ports; SDK supplies bounded transport and observation callbacks. Hosts own
@@ -56,23 +54,10 @@ records intact. Profile-only import/export still transfers authored material, no
 memory. Separate App memory archives transfer only explicitly export-permitted
 selected history into a new fork; existing forbidden records stay excluded. Local and managed databases are separate, unsynchronized stores.
 
-## Milestone acceptance and remaining work
+## Relationship quality
 
-Local deterministic coverage includes bounded retention/recall, source and subject
-validation, stale-write rejection, revision history, owner/perspective isolation,
-profile/memory separation, portable relationships and contextual legacy views.
-An arbitrary fourth host was exercised through SDK HTTP transport and the App API.
-An isolated four-call Workers AI Llama run carried one persisted relationship from
-controlled Dungeon injury/help through a fourth host and App chat, then revised
-it with contrary reports from two worlds; SQLite reopen preserved it. One
-unsupported old-evidence revision was rejected. Contrary fourth-host reports were
-synthetic. This is local service/model evidence, not complete browser-game E2E,
-real-player behavior, reliable model compliance or production verification.
-
-Remaining work includes semantic retrieval/embeddings, complete archives and
-authorized same-identity restore, distributed ownership/merge, general
-multiplayer identity negotiation, broader provider-quality evaluation and product
-UI E2E acceptance. The milestone does not authorize publication or deployment.
+Relationship interpretation and revision are model-dependent. Current validation
+and persistence checks do not establish reliable semantic reassessment.
 
 ## Implementation map
 
@@ -142,7 +127,7 @@ selection and synchronous compaction without an asynchronous gap. Local App acce
 the App; configure provider credentials in App Settings, never in the SDK. This
 route requires an explicit available real provider/model and returns the bridge
 response directly. Its host context grants no execution authority. Generic SDK
-clients configure this endpoint and send the `ifsoul-bridge/0.3.0` request; a host
+clients configure this endpoint and send the `ifsoul-bridge/0.4.0` request; a host
 must separately validate and execute proposed choices. Trusted hosting can inject
 `APIOptions.bridge` after authenticating and partitioning its store; the export
 alone does not enable hosted access or quotas. `POST /api/bridge/observations` accepts the same bounded request envelope and
@@ -233,7 +218,7 @@ trusted policy prose and empty derived context while retaining world/actor
 attribution and the prior relationship needed for revision. Storage failures preserve the prior snapshot
 and do not turn a valid dialogue into a claim that memory was updated.
 
-## Bounded App memory archive (0.1)
+## Bounded App memory archive
 
 The Memory screen can create a **new empty exportable memory** with a profile
 copy. This explicit action permits future records in that new owner-local memory
@@ -242,8 +227,8 @@ existing `forbidden` / `consent-required` records exportable. A memory with no
 eligible retained events produces an explanation, not an empty successful backup.
 Profile-only import/export is unchanged.
 
-The `ifsoul-app-memory/0.3.0` format is one UTF-8 JSON document, part of the common IfSoul 0.3.0 release, with a distinct shape from Core wire schemas. It is **not** an
-implementation of the frozen Core v0.2 archive-manifest / JSONL package contract.
+The `ifsoul-app-memory/0.4.0` format is one UTF-8 JSON document, part of the common IfSoul 0.4.0 release, with a distinct shape from Core wire schemas. It is **not** an
+implementation of the current Core archive-manifest / JSONL package contract.
 There is no ZIP parser, extraction path, compression or filesystem entry import.
 The envelope contains a canonical-JSON payload SHA-256, source memory identity,
 creation time, filtered-fork intent, explicit losses/omission counts, historical
@@ -317,66 +302,3 @@ authentication and API busy protections remain in force. The local HTTP adapter
 accepts preview/import request envelopes up to 2,010,000 bytes, including the
 2,000,000-byte archive and wrapper; unrelated request limits remain unchanged. Managed hosting must
 still authenticate and partition its owner store before using the public App API.
-The managed composition was deployed on 2026-11-06 (version prefix `1f13e066`).
-Production HTTP/security smoke and sign-in/demo rendering passed, but authenticated
-archive export/import and BYOK decryption were not exercised in production.
-Local synthetic workerd compatibility tests do not establish real-user
-production behavior. This is dated release evidence, not a current deployment check.
-
-Deterministic isolated SQLite coverage exercises eligible reports, relationships
-and App chat through export/import, database reopen, continued chat, two imported
-forks independently crossing retention, and resetting one fork without changing
-the source/other fork. Version, checksum, size, foreign-owner, missing-profile and
-preview mismatches reject without adding destination profiles. This is local
-service proof without a paid model call; it does not establish model fidelity or
-production behavior.
-
-## Isolated browser acceptance (2026-11-08)
-
-A headless local acceptance composition exercised the real App authoring UI with
-an original synthetic profile and a new explicitly exportable memory. A separate
-local host page mounted the reviewed original Garden and Friendly 21 packages
-through the public SDK, using that profile and selected memory. Actual host
-observations reached the same owner store; the test used local Ollama `qwen3:8b`,
-with LLM and fallback sources distinguished. This fixture is not the shipped
-Website Playground and does not add a game-mounting surface to public App.
-
-After a server restart, the App retained the selected profile, memory and chat.
-The UI downloaded a 28,475-byte archive, previewed it through the real HTTP adapter
-and imported a distinct fork. Preview disclosed 12 retained records, two profiles
-and two unsupported omissions, with the untrusted-history/fork-only warning.
-The source remained unchanged and both worlds' historical report attribution was
-preserved in the fork. These are isolated local browser/service observations;
-managed authentication, production persistence and external games were not tested.
-
-The first Russian App reply recalled both worlds and the card winner but wrongly
-credited a companion's Garden action to the player. Raw reports and the packed
-10,000-byte model prompt retained the correct actor, observer and character
-identity. App's trusted prompt now explicitly distinguishes those roles, preserves
-unknown actors and prevents generated dialogue/opinions from overriding report
-attribution. A deterministic regression checks those packed fields and directives.
-Exactly one neutral English follow-up on the imported fork then correctly
-attributed composting to the companion in first person and the card win to the
-player, retained the English reply language and continued without protocol JSON.
-That controlled sample passed; the earlier failure remains part of the evidence.
-One local model sample does not establish reliable attribution across providers.
-Derived reflection was unavailable in this run, so relationship-quality acceptance
-remains open. Earlier deterministic coverage and dated production receipts above
-remain separate evidence.
-
-### Isolated relationship acceptance — 2026-11-09
-
-A real local `qwen3:8b` App interaction proposed a portable character-to-player
-trust belief grounded in original Garden and Friendly21 reported outcomes. Trusted
-validation accepted it; the same identity, revision and citations survived a
-SQLite/server restart and appeared in the Memory UI. Another profile's memory
-remained empty. This is local synthetic evidence, not production or native support.
-
-Subsequent contrary outcomes exposed a quality gap: the model repeated its prior
-positive-only explanation while changing citations. The earlier citation-only
-revision remains historical evidence; the new no-op guard prevented another such
-revision in the final bounded probe. Six provider attempts included a budget
-deferral, a timeout, an invalid typed proposal, an accepted relationship, and two
-semantically unchanged proposals. No additional retries were used to manufacture
-success. Grounded substantive reassessment remains unproven for this sample;
-same-value trust would be acceptable with a genuinely updated explanation.

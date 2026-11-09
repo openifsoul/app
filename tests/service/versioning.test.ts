@@ -1,88 +1,79 @@
-import { recordBridgeRequest } from "../../apps/runtime-host/src/bridge-memory.js";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { openSQLiteMemory } from "@ifsoul/core/memory/sqlite";
-import {
-  previewMemoryArchive,
-  importMemoryArchive,
-  exportMemoryArchive,
-} from "../../apps/runtime-host/src/memory-archive.js";
-import type { Result } from "@ifsoul/core/memory/port";
-const value = <T>(r: Result<T>): T => {
-  assert(r.ok, JSON.stringify(r));
-  if (!r.ok) throw Error();
-  return r.value;
-};
-test("golden original legacy archive keeps checksum and evidence; import forks identity and reopens", () => {
-  const bytes = readFileSync(
-    new URL("./fixtures/legacy-memory-archive.json", import.meta.url),
-    "utf8",
-  );
-  const legacy = JSON.parse(bytes);
-  const original = JSON.stringify(legacy);
-  assert(previewMemoryArchive(legacy).ok);
-  assert(
-    !previewMemoryArchive({ ...legacy, version: "ifsoul-app-memory/9.9" }).ok,
-  );
-  assert(
-    !previewMemoryArchive({ ...legacy, version: "ifsoul-bridge/0.3.0" }).ok,
-  );
-  assert(!previewMemoryArchive({ ...legacy, sha256: "0".repeat(64) }).ok);
-  const dir = mkdtempSync(join(tmpdir(), "ifsoul-legacy-030-"));
-  let memory = value(openSQLiteMemory(join(dir, "test.sqlite")));
+import { previewMemoryArchive } from "../../apps/runtime-host/src/memory-archive.js";
+test("old and wrong-family outer archives reject without mutating their bytes", () => {
+  for (const version of [
+    "ifsoul-app-memory/0.1",
+    "ifsoul-app-memory/0.3.0",
+    "ifsoul-bridge/0.4.0",
+    "ifsoul-app-memory/9.9",
+  ]) {
+    const archive = {
+      version,
+      sha256: "0".repeat(64),
+      payload: { sourceMemoryId: "synthetic-old" },
+    };
+    const bytes = JSON.stringify(archive);
+    assert.equal(previewMemoryArchive(archive).ok, false);
+    assert.equal(JSON.stringify(archive), bytes);
+  }
+});
+
+test("old persisted owner records stop initialization without creating a replacement starter", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { MEMORY_SCHEMA } = await import("@ifsoul/core/memory/sql");
+  const { openSQLiteMemory } = await import("@ifsoul/core/memory/sqlite");
+  const { character } =
+    await import("../../apps/runtime-host/src/default-context.js");
+  const { createCharacterWorkspace } =
+    await import("../../apps/runtime-host/src/characters.js");
+  const { createScenarioController } =
+    await import("../../apps/runtime-host/src/service.js");
+  const dir = mkdtempSync(join(tmpdir(), "ifsoul-app-old-store-"));
+  const file = join(dir, "synthetic.sqlite");
+  const old = {
+    ...character(),
+    characterId: "old-owner",
+    schemaVersion: "0.3.0",
+  };
+  const bytes = JSON.stringify(old);
   try {
-    const fork = value(importMemoryArchive(memory, legacy, legacy.sha256));
-    assert.notEqual(fork.characterId, legacy.payload.sourceMemoryId);
-    assert.equal(JSON.stringify(legacy), original);
-    const stored = value(memory.getCharacter(fork.memoryId));
-    assert.equal(stored?.schemaVersion, "draft-0.2.0");
-    assert.equal(exportMemoryArchive(memory, fork.memoryId).ok, false);
-    memory.close();
-    memory = value(openSQLiteMemory(join(dir, "test.sqlite")));
-    assert.deepEqual(value(memory.getCharacter(fork.memoryId)), stored);
-    recordBridgeRequest(memory, fork.memoryId, {
-      version: "ifsoul-bridge/0.3.0",
-      hostId: "original-observatory",
-      memoryId: fork.memoryId,
-      character: {
-        id: fork.characterId,
-        name: "Original",
-        temperament: "careful",
-      },
-      requestId: "after-reopen",
-      operation: "chat",
-      context: "A new report",
-      choices: [],
-      fallbackChoiceId: "",
-      history: [
-        {
-          id: "new-observation",
-          hostId: "original-observatory",
-          kind: "observation",
-          summary: "The player reported repairing a fictional basket.",
-          actor: "user",
-          recipient: "agent",
-          observer: "agent",
-          perspectiveCharacterId: fork.characterId,
-        },
-      ],
-    });
-    const current = value(exportMemoryArchive(memory, fork.memoryId));
-    assert.equal(current.version, "ifsoul-app-memory/0.3.0");
-    assert(previewMemoryArchive(current).ok);
-    assert.equal(JSON.stringify(JSON.parse(bytes)), original);
-    assert.equal(
-      readFileSync(
-        new URL("./fixtures/legacy-memory-archive.json", import.meta.url),
-        "utf8",
-      ),
+    const db = new DatabaseSync(file);
+    db.exec(MEMORY_SCHEMA);
+    db.prepare("INSERT INTO characters(id,document) VALUES(?,?)").run(
+      old.characterId,
       bytes,
     );
+    db.close();
+    for (let n = 0; n < 2; n++) {
+      const opened = openSQLiteMemory(file);
+      assert(opened.ok);
+      if (!opened.ok) throw Error();
+      const workspace = createCharacterWorkspace({
+        memory: opened.value,
+        controllerFor: () => createScenarioController(),
+      });
+      const result = workspace.listCharacters();
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.code, "unsupported");
+      opened.value.close();
+      const check = new DatabaseSync(file);
+      assert.equal(
+        check.prepare("SELECT count(*) AS n FROM characters").get()?.n,
+        1,
+      );
+      assert.equal(
+        check
+          .prepare("SELECT document FROM characters WHERE id=?")
+          .get(old.characterId)?.document,
+        bytes,
+      );
+      check.close();
+    }
   } finally {
-    memory.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

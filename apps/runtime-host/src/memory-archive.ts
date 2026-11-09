@@ -5,8 +5,7 @@ import { failure, success } from "@ifsoul/core/memory/port";
 import type { MemoryPort, Result } from "@ifsoul/core/memory/port";
 import { memoryLineage, historicalPlayer } from "./memory-lineage.js";
 
-export const MEMORY_ARCHIVE_VERSION = "ifsoul-app-memory/0.3.0";
-export const LEGACY_MEMORY_ARCHIVE_VERSION = "ifsoul-app-memory/0.1";
+export const MEMORY_ARCHIVE_VERSION = "ifsoul-app-memory/0.4.0";
 export const MEMORY_ARCHIVE_BYTES = 2_000_000;
 const environments = [
   "browser-continuation",
@@ -49,7 +48,7 @@ export interface ArchivePayload {
   omitted: { forbidden: number; unsupported: number; derived: number };
 }
 export interface MemoryArchive {
-  version: typeof MEMORY_ARCHIVE_VERSION | typeof LEGACY_MEMORY_ARCHIVE_VERSION;
+  version: typeof MEMORY_ARCHIVE_VERSION;
   sha256: string;
   payload: ArchivePayload;
 }
@@ -656,9 +655,7 @@ export function previewMemoryArchive(value: unknown): Result<ArchivePreview> {
     if (
       !object(value) ||
       !keys(value, ["version", "sha256", "payload"]) ||
-      ![MEMORY_ARCHIVE_VERSION, LEGACY_MEMORY_ARCHIVE_VERSION].includes(
-        value.version,
-      ) ||
+      value.version !== MEMORY_ARCHIVE_VERSION ||
       !/^[a-f0-9]{64}$/.test(value.sha256)
     )
       throw Error();

@@ -15,11 +15,11 @@ importers:
         specifier: 2.1.2
         version: 2.1.2(gsap@3.15.1)(react@19.3.1)
       '@ifsoul/adapter-sdk':
-        specifier: file:vendor/ifsoul-adapter-sdk-0.3.0.tgz
-        version: file:vendor/ifsoul-adapter-sdk-0.3.0.tgz
+        specifier: file:vendor/ifsoul-adapter-sdk-0.4.0.tgz
+        version: file:vendor/ifsoul-adapter-sdk-0.4.0.tgz
       '@ifsoul/core':
-        specifier: file:vendor/ifsoul-core-0.3.0.tgz
-        version: file:vendor/ifsoul-core-0.3.0.tgz
+        specifier: file:vendor/ifsoul-core-0.4.0.tgz
+        version: file:vendor/ifsoul-core-0.4.0.tgz
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -264,14 +264,14 @@ packages:
       gsap: ^3.12.5
       react: '>=17'
 
-  '@ifsoul/adapter-sdk@file:vendor/ifsoul-adapter-sdk-0.3.0.tgz':
-    resolution: {integrity: sha512-K7yKBuAsP5U6rAoWjcsL0yVbPM5Jk1CI8sHxYfn3VqiULX5HJoUA2mUX5qOdv1xW5WU9J+oRKXMow2TBh0R99w==, tarball: file:vendor/ifsoul-adapter-sdk-0.3.0.tgz}
-    version: 0.3.0
+  '@ifsoul/adapter-sdk@file:vendor/ifsoul-adapter-sdk-0.4.0.tgz':
+    resolution: {integrity: sha512-QoNUXX7WJzoEEdjWDw2UPn9wiQEjagAV3WRI1HyLaRiuZ4oTRERQmpVfeHvULF7hRmvKAiWcN81Q5SE5aIk+Ng==, tarball: file:vendor/ifsoul-adapter-sdk-0.4.0.tgz}
+    version: 0.4.0
     engines: {node: '>=22.18'}
 
-  '@ifsoul/core@file:vendor/ifsoul-core-0.3.0.tgz':
-    resolution: {integrity: sha512-ftY6BheutufG9qN1f6bQZSG6cc3sbfdV+M77EVz0CJva8igbMDODd1/7jGPQWZBXo77itYbZZ+uh5fqsw0R5rg==, tarball: file:vendor/ifsoul-core-0.3.0.tgz}
-    version: 0.3.0
+  '@ifsoul/core@file:vendor/ifsoul-core-0.4.0.tgz':
+    resolution: {integrity: sha512-adp0DMQf8xgfXoH39Ui+tju6jEQ2auHv3KggiESw6zR+trZFYrm1CYLPuinOmHNPlpv29G8FC6C1S4bYEg0fYQ==, tarball: file:vendor/ifsoul-core-0.4.0.tgz}
+    version: 0.4.0
     engines: {node: '>=22.18 <25'}
 
   '@jridgewell/gen-mapping@0.3.13':
@@ -1758,9 +1758,9 @@ snapshots:
       gsap: 3.15.1
       react: 19.3.1
 
-  '@ifsoul/adapter-sdk@file:vendor/ifsoul-adapter-sdk-0.3.0.tgz': {}
+  '@ifsoul/adapter-sdk@file:vendor/ifsoul-adapter-sdk-0.4.0.tgz': {}
 
-  '@ifsoul/core@file:vendor/ifsoul-core-0.3.0.tgz':
+  '@ifsoul/core@file:vendor/ifsoul-core-0.4.0.tgz':
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
