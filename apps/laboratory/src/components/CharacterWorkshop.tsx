@@ -125,28 +125,32 @@ export function CharacterWorkshop({
     });
   }
   return (
-    <div className="space-y-4">
+    <div className="character-workshop space-y-4">
       <Tabs defaultValue="generate">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="generate">Generate</TabsTrigger>
           <TabsTrigger value="import">Import</TabsTrigger>
           <TabsTrigger value="library">Library</TabsTrigger>
         </TabsList>
-        <TabsContent value="generate" className="space-y-3">
-          <Label htmlFor="character-brief">Describe your character *</Label>
-          <Textarea
-            id="character-brief"
-            maxLength={4000}
-            value={brief}
-            disabled={busy || pending}
-            onChange={(e) => setBrief(e.target.value)}
-            placeholder="A talking clock who lost its memories and wants to explore the world…"
-          />
-          <p className="text-xs text-muted-foreground">
-            {brief.length} / 4000 · Uses {provider} /{" "}
-            {model || "choose a model"}. Generation sends only this brief.
-            Review invented details before saving.
-          </p>
+        <TabsContent value="generate" className="space-y-4">
+          <div className="character-brief-field">
+            <Label htmlFor="character-brief">Describe your character *</Label>
+            <Textarea
+              id="character-brief"
+              maxLength={4000}
+              value={brief}
+              disabled={busy || pending}
+              onChange={(e) => setBrief(e.target.value)}
+              placeholder="A talking clock who lost its memories and wants to explore the world…"
+              aria-describedby="character-brief-count"
+            />
+            <p
+              id="character-brief-count"
+              className="text-xs text-muted-foreground"
+            >
+              {brief.length}/4000
+            </p>
+          </div>
           <Button
             disabled={busy || pending || !canGenerate || !brief.trim()}
             onClick={() => void generate()}
@@ -174,7 +178,7 @@ export function CharacterWorkshop({
             Copy prompt for another agent
           </Button>
         </TabsContent>
-        <TabsContent value="import" className="space-y-3">
+        <TabsContent value="import" className="space-y-4">
           <Label htmlFor="character-file">Character profile file</Label>
           <Input
             id="character-file"
@@ -193,7 +197,7 @@ export function CharacterWorkshop({
             imported.
           </p>
         </TabsContent>
-        <TabsContent value="library" className="space-y-3">
+        <TabsContent value="library" className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Original starter profiles. Each saved copy starts with an empty
             history.

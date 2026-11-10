@@ -32,7 +32,7 @@ const listVariants = cva(
     variants: {
       variant: {
         segmented:
-          "h-11 overflow-x-auto rounded-lg bg-muted p-[3px] shadow-inner [scrollbar-width:none] data-[orientation=vertical]:h-auto data-[orientation=vertical]:flex-col data-[orientation=vertical]:items-stretch",
+          "h-[50px] min-h-[50px] overflow-x-auto rounded-lg bg-muted p-[3px] shadow-inner [scrollbar-width:none] data-[orientation=vertical]:h-auto data-[orientation=vertical]:flex-col data-[orientation=vertical]:items-stretch",
         underline:
           "h-11 gap-5 border-b border-border data-[orientation=vertical]:h-auto data-[orientation=vertical]:flex-col data-[orientation=vertical]:items-start data-[orientation=vertical]:gap-1 data-[orientation=vertical]:border-s data-[orientation=vertical]:border-b-0 data-[orientation=vertical]:ps-3",
       },
@@ -46,7 +46,7 @@ const indicatorVariants = cva(
   {
     variants: {
       variant: {
-        segmented: "rounded-md border border-border/60 bg-card shadow-sm",
+        segmented: "rounded-md bg-card",
         underline:
           "rounded-full bg-signal [[data-orientation=horizontal]>&]:-bottom-px [[data-orientation=horizontal]>&]:h-0.5 [[data-orientation=vertical]>&]:-start-px [[data-orientation=vertical]>&]:w-0.5",
       },
@@ -100,10 +100,10 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "relative z-10 inline-flex h-full items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium whitespace-nowrap outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative z-10 inline-flex h-full items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium whitespace-nowrap outline-none transition-colors duration-150 hover:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         "[[data-variant=segmented]_&]:flex-1 [[data-variant=segmented][data-orientation=vertical]_&]:h-10 [[data-variant=segmented][data-orientation=vertical]_&]:justify-start",
         "[[data-variant=underline]_&]:px-0.5 [[data-variant=underline][data-orientation=vertical]_&]:h-10",
-        "[[data-slot=tabs-list][data-variant=segmented]:not([data-ready])_&]:data-[state=active]:bg-card [[data-slot=tabs-list][data-variant=segmented]:not([data-ready])_&]:data-[state=active]:shadow-sm",
+        "[[data-slot=tabs-list][data-variant=segmented]:not([data-ready])_&]:data-[state=active]:bg-card",
         "[[data-slot=tabs-list][data-variant=underline]:not([data-ready])_&]:data-[state=active]:shadow-[inset_0_-2px_0_var(--primary)]",
         className,
       )}
@@ -120,7 +120,7 @@ function TabsContent({
     <TabsPrimitive.Content
       data-slot="tabs-content"
       className={cn(
-        "flex-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-200",
+        "flex-1 outline-none data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-200",
         className,
       )}
       {...props}

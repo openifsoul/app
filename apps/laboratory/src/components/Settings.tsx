@@ -54,7 +54,14 @@ export function Settings({
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const [location, setLocation] = useState(status.mode);
+  const currentPlacement =
+    status.placement ?? (status.mode === "local" ? "local" : "managed");
+  const [location, setLocation] = useState<"local" | "selfhost" | "managed">(
+    currentPlacement,
+  );
+  const [selfhostOrigin, setSelfhostOrigin] = useState(
+    currentPlacement === "selfhost" ? window.location.origin : "",
+  );
   const [localOrigin, setLocalOrigin] = useState("http://127.0.0.1:8788");
   const [cloudOrigin, setCloudOrigin] = useState(
     status.mode === "cloud" ? window.location.origin : "",
@@ -115,7 +122,13 @@ export function Settings({
 
   function navigate() {
     try {
-      const url = new URL(location === "local" ? localOrigin : cloudOrigin);
+      const url = new URL(
+        location === "local"
+          ? localOrigin
+          : location === "selfhost"
+            ? selfhostOrigin
+            : cloudOrigin,
+      );
       if (
         url.username ||
         url.password ||
@@ -129,285 +142,321 @@ export function Settings({
         (url.protocol !== "http:" || url.hostname !== "127.0.0.1")
       )
         throw new Error();
-      if (location === "cloud" && url.protocol !== "https:") throw new Error();
+      if (location !== "local" && url.protocol !== "https:") throw new Error();
       window.location.assign(`${url.origin}/app`);
     } catch {
       setLocationError(
         location === "local"
           ? "Use a local address such as http://127.0.0.1:8788 with no path or credentials."
-          : "Enter the HTTPS address of your cloud App, with no path or credentials.",
+          : "Enter the HTTPS address of the service, with no path or credentials.",
       );
     }
   }
 
   return (
-    <Card className="settings-card">
-      <CardHeader>
-        <CardTitle>
-          <Settings2 size={17} />
-          Workspace settings
-        </CardTitle>
-        <p className="card-subtitle">
-          Choose where it runs. Then how it thinks.
-        </p>
-      </CardHeader>
-      <CardContent>
-        <section className="settings-section">
-          <div className="section-label">
-            <Server size={14} /> RUNTIME LOCATION
-          </div>
-          <Label htmlFor="runtime-location">Run character and memory on</Label>
-          <Select
-            value={location}
-            onValueChange={(value) => {
-              setLocation(value as "local" | "cloud");
-              setLocationError(null);
-            }}
-            disabled={disabled}
-          >
-            <SelectTrigger id="runtime-location" className="wide">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="cloud">
-                <Cloud size={15} />
-                Cloud runtime
-              </SelectItem>
-              <SelectItem value="local">
-                <Monitor size={15} />
-                This computer
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="runtime-caption">
-            <span className="status-dot" />
-            Currently{" "}
-            {status.mode === "cloud"
-              ? "running in the cloud"
-              : "running on this computer"}
-          </div>
-          {location !== status.mode && (
-            <div className="runtime-switch">
-              <Label htmlFor="runtime-address">
-                {location === "local"
-                  ? "Local App address"
-                  : "Cloud App address"}
+    <>
+      <Card className="settings-card">
+        <CardHeader>
+          <CardTitle>
+            <Settings2 size={17} />
+            Workspace settings
+          </CardTitle>
+          <p className="card-subtitle">
+            Choose where it runs. Then how it thinks.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <section className="settings-section">
+            <div className="section-label">
+              <Server size={14} /> RUNTIME LOCATION
+            </div>
+            <Label htmlFor="runtime-location">
+              Run character and memory on
+            </Label>
+            <Select
+              value={location}
+              onValueChange={(value) => {
+                setLocation(value as "local" | "selfhost" | "managed");
+                setLocationError(null);
+              }}
+              disabled={disabled}
+            >
+              <SelectTrigger id="runtime-location" className="wide">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="managed">
+                  <Cloud size={15} />
+                  Managed service
+                </SelectItem>
+                <SelectItem value="selfhost">
+                  <Server size={15} />
+                  Self-hosted service
+                </SelectItem>
+                <SelectItem value="local">
+                  <Monitor size={15} />
+                  Local service · this computer
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="runtime-caption flex-wrap">
+              <span className="status-dot" />
+              Memory stays on the current service
+              {currentPlacement === "local"
+                ? " on this computer"
+                : currentPlacement === "selfhost"
+                  ? " on your server"
+                  : " in the managed service"}
+              .<span className="break-all">{window.location.origin}</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Changing a model or payment method keeps this memory here. Opening
+              another service selects its own store; nothing is automatically
+              copied.
+            </p>
+            {(location === "selfhost" || location !== currentPlacement) && (
+              <div className="runtime-switch">
+                <Label htmlFor="runtime-address">
+                  {location === "local"
+                    ? "Local App address"
+                    : location === "selfhost"
+                      ? "Self-hosted App address"
+                      : "Managed App address"}
+                </Label>
+                <Input
+                  id="runtime-address"
+                  type="url"
+                  value={
+                    location === "local"
+                      ? localOrigin
+                      : location === "selfhost"
+                        ? selfhostOrigin
+                        : cloudOrigin
+                  }
+                  placeholder={
+                    location === "local"
+                      ? "http://127.0.0.1:8788"
+                      : "https://your-laboratory.example"
+                  }
+                  onChange={(event) => {
+                    if (location === "local")
+                      setLocalOrigin(event.target.value);
+                    else if (location === "selfhost")
+                      setSelfhostOrigin(event.target.value);
+                    else setCloudOrigin(event.target.value);
+                    setLocationError(null);
+                  }}
+                  aria-describedby="runtime-switch-note"
+                />
+                <p id="runtime-switch-note">
+                  Opens the other runtime. Each runtime has its own memory
+                  store; nothing is automatically copied.
+                </p>
+                {locationError && (
+                  <p className="field-error" role="alert">
+                    {locationError}
+                  </p>
+                )}
+                <Button
+                  variant="outline"
+                  className="wide"
+                  onClick={navigate}
+                  disabled={disabled}
+                >
+                  Open{" "}
+                  {location === "local"
+                    ? "local"
+                    : location === "selfhost"
+                      ? "self-hosted"
+                      : "managed"}{" "}
+                  service
+                  <ArrowUpRight />
+                </Button>
+              </div>
+            )}
+          </section>
+          <section className="settings-section">
+            <div className="section-label">
+              <Cpu size={14} /> MODEL CONNECTION
+            </div>
+            <Label htmlFor="model-provider">Provider</Label>
+            <Select
+              value={provider}
+              onValueChange={(value) => onProvider(value as ProviderId)}
+              disabled={disabled}
+            >
+              <SelectTrigger id="model-provider" className="wide">
+                <SelectValue placeholder="Choose a provider" />
+              </SelectTrigger>
+              <SelectContent>
+                {status.providers.map((item) => (
+                  <SelectItem
+                    key={item.id}
+                    value={item.id}
+                    disabled={status.mode === "cloud" && item.id === "ollama"}
+                  >
+                    {item.label}
+                    {!item.available ? " · not connected" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Label htmlFor="model-selection">Model</Label>
+            <Select
+              value={model}
+              onValueChange={onModel}
+              disabled={disabled || !selected?.models.length}
+            >
+              <SelectTrigger id="model-selection" className="wide">
+                <SelectValue placeholder="Connect a provider first" />
+              </SelectTrigger>
+              <SelectContent>
+                {selected?.models.map((item) => (
+                  <SelectItem
+                    key={item.id}
+                    value={item.id}
+                    disabled={status.mode === "cloud" && item.id === "ollama"}
+                  >
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="provider-note">
+              {provider === "scenario" ? (
+                <>
+                  <SparkleMark />
+                  Synthetic controller. Deterministic scenario, with no model
+                  request.
+                </>
+              ) : provider === "ollama" ? (
+                <>
+                  <Monitor size={14} />
+                  {status.mode === "cloud"
+                    ? "Ollama needs a local runtime on your computer. Open it above to use local models."
+                    : "Models are served by Ollama on this computer. The runtime stays separate from the model."}
+                </>
+              ) : provider === "openai" ? (
+                <>
+                  <ShieldCheck size={14} />
+                  Uses your key for requests to OpenAI. Character memory stays
+                  on this runtime.
+                </>
+              ) : (
+                <>
+                  <Cloud size={14} />
+                  Inference uses this runtime's Cloudflare connection. Character
+                  memory stays here.
+                </>
+              )}
+            </div>
+          </section>
+          <section className="settings-section key-section">
+            <div className="key-heading">
+              <div className="section-label">
+                <KeyRound size={14} /> OPENAI KEY
+              </div>
+              <Badge
+                variant="outline"
+                className={openai?.available ? "connected-badge" : ""}
+              >
+                {openai?.available ? "Connected" : "Not connected"}
+              </Badge>
+            </div>
+            <form onSubmit={(event) => void saveKey(event)}>
+              <Label htmlFor="openai-key">
+                {openai?.available ? "Replace key" : "Connect your key"}
               </Label>
               <Input
-                id="runtime-address"
-                type="url"
-                value={location === "local" ? localOrigin : cloudOrigin}
-                placeholder={
-                  location === "local"
-                    ? "http://127.0.0.1:8788"
-                    : "https://your-laboratory.example"
-                }
+                id="openai-key"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={key}
                 onChange={(event) => {
-                  if (location === "local") setLocalOrigin(event.target.value);
-                  else setCloudOrigin(event.target.value);
-                  setLocationError(null);
+                  setKey(event.target.value);
+                  setFailure(null);
+                  setNotice(null);
                 }}
-                aria-describedby="runtime-switch-note"
+                placeholder="Paste an OpenAI API key"
+                disabled={disabled}
+                aria-describedby="key-note"
               />
-              <p id="runtime-switch-note">
-                Opens the other runtime. Each runtime has its own memory store;
-                nothing is automatically copied.
+              <p id="key-note">
+                Write-only. Never shown back or saved in browser storage.
               </p>
-              {locationError && (
+              {failure && (
                 <p className="field-error" role="alert">
-                  {locationError}
+                  {failure}
+                </p>
+              )}
+              {notice && (
+                <p className="field-success" role="status">
+                  <Check size={13} />
+                  {notice}
                 </p>
               )}
               <Button
-                variant="outline"
+                type="submit"
+                variant="secondary"
                 className="wide"
-                onClick={navigate}
-                disabled={disabled}
+                disabled={!key.trim() || disabled}
               >
-                Open {location === "local" ? "local" : "cloud"} runtime
-                <ArrowUpRight />
+                {saving ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <KeyRound />
+                )}
+                {saving
+                  ? "Updating connection…"
+                  : openai?.available
+                    ? "Replace key"
+                    : "Connect key"}
               </Button>
-            </div>
-          )}
-        </section>
-        <section className="settings-section">
-          <div className="section-label">
-            <Cpu size={14} /> MODEL CONNECTION
-          </div>
-          <Label htmlFor="model-provider">Provider</Label>
-          <Select
-            value={provider}
-            onValueChange={(value) => onProvider(value as ProviderId)}
-            disabled={disabled}
-          >
-            <SelectTrigger id="model-provider" className="wide">
-              <SelectValue placeholder="Choose a provider" />
-            </SelectTrigger>
-            <SelectContent>
-              {status.providers.map((item) => (
-                <SelectItem
-                  key={item.id}
-                  value={item.id}
-                  disabled={status.mode === "cloud" && item.id === "ollama"}
-                >
-                  {item.label}
-                  {!item.available ? " · not connected" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Label htmlFor="model-selection">Model</Label>
-          <Select
-            value={model}
-            onValueChange={onModel}
-            disabled={disabled || !selected?.models.length}
-          >
-            <SelectTrigger id="model-selection" className="wide">
-              <SelectValue placeholder="Connect a provider first" />
-            </SelectTrigger>
-            <SelectContent>
-              {selected?.models.map((item) => (
-                <SelectItem
-                  key={item.id}
-                  value={item.id}
-                  disabled={status.mode === "cloud" && item.id === "ollama"}
-                >
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="provider-note">
-            {provider === "scenario" ? (
-              <>
-                <SparkleMark />
-                Synthetic controller. Deterministic scenario, with no model
-                request.
-              </>
-            ) : provider === "ollama" ? (
-              <>
-                <Monitor size={14} />
-                {status.mode === "cloud"
-                  ? "Ollama needs a local runtime on your computer. Open it above to use local models."
-                  : "Models are served by Ollama on this computer. The runtime stays separate from the model."}
-              </>
-            ) : provider === "openai" ? (
-              <>
-                <ShieldCheck size={14} />
-                Uses your key for requests to OpenAI. Character memory stays on
-                this runtime.
-              </>
-            ) : (
-              <>
-                <Cloud size={14} />
-                Inference uses this runtime's Cloudflare connection. Character
-                memory stays here.
-              </>
-            )}
-          </div>
-        </section>
-        <section className="settings-section key-section">
-          <div className="key-heading">
-            <div className="section-label">
-              <KeyRound size={14} /> OPENAI KEY
-            </div>
-            <Badge
-              variant="outline"
-              className={openai?.available ? "connected-badge" : ""}
-            >
-              {openai?.available ? "Connected" : "Not connected"}
-            </Badge>
-          </div>
-          <form onSubmit={(event) => void saveKey(event)}>
-            <Label htmlFor="openai-key">
-              {openai?.available ? "Replace key" : "Connect your key"}
-            </Label>
-            <Input
-              id="openai-key"
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={key}
-              onChange={(event) => {
-                setKey(event.target.value);
-                setFailure(null);
-                setNotice(null);
-              }}
-              placeholder="Paste an OpenAI API key"
-              disabled={disabled}
-              aria-describedby="key-note"
-            />
-            <p id="key-note">
-              Write-only. Never shown back or saved in browser storage.
-            </p>
-            {failure && (
-              <p className="field-error" role="alert">
-                {failure}
-              </p>
-            )}
-            {notice && (
-              <p className="field-success" role="status">
-                <Check size={13} />
-                {notice}
-              </p>
-            )}
-            <Button
-              type="submit"
-              variant="secondary"
-              className="wide"
-              disabled={!key.trim() || disabled}
-            >
-              {saving ? (
-                <LoaderCircle className="animate-spin" />
-              ) : (
-                <KeyRound />
-              )}
-              {saving
-                ? "Updating connection…"
-                : openai?.available
-                  ? "Replace key"
-                  : "Connect key"}
-            </Button>
-          </form>
-          {openai?.available &&
-            (confirmDisconnect ? (
-              <div className="disconnect-confirm">
-                <p>Disconnect this session's OpenAI key?</p>
-                <div>
-                  <Button
-                    variant="outline"
-                    disabled={disabled}
-                    onClick={() => setConfirmDisconnect(false)}
-                  >
-                    Keep key
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    disabled={disabled}
-                    onClick={() => void disconnect()}
-                  >
-                    Disconnect
-                  </Button>
+            </form>
+            {openai?.available &&
+              (confirmDisconnect ? (
+                <div className="disconnect-confirm">
+                  <p>Disconnect this session's OpenAI key?</p>
+                  <div>
+                    <Button
+                      variant="outline"
+                      disabled={disabled}
+                      onClick={() => setConfirmDisconnect(false)}
+                    >
+                      Keep key
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={disabled}
+                      onClick={() => void disconnect()}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <Button
-                variant="ghost"
-                className="wide disconnect-button"
-                disabled={disabled}
-                onClick={() => setConfirmDisconnect(true)}
-              >
-                <Unplug size={14} />
-                Disconnect key
-              </Button>
-            ))}
-        </section>
-        <div className="settings-footnote">
-          <ShieldCheck size={14} />
-          <span>Provider choice and runtime location are independent.</span>
-        </div>
-      </CardContent>
-    </Card>
+              ) : (
+                <Button
+                  variant="ghost"
+                  className="wide disconnect-button"
+                  disabled={disabled}
+                  onClick={() => setConfirmDisconnect(true)}
+                >
+                  <Unplug size={14} />
+                  Disconnect key
+                </Button>
+              ))}
+          </section>
+          <div className="settings-footnote">
+            <ShieldCheck size={14} />
+            <span>
+              Memory location, model provider and provider payment are
+              independent.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    </>
   );
 }
 

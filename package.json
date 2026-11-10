@@ -1,6 +1,6 @@
 {
   "name": "@ifsoul/app",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": false,
   "type": "module",
   "description": "Self-hostable IfSoul App and reusable local/cloud UI",
@@ -70,21 +70,22 @@
     "./ui/message": "./apps/laboratory/src/components/ui/message.tsx"
   },
   "dependencies": {
-    "@ifsoul/core": "file:vendor/ifsoul-core-0.4.0.tgz",
     "@fontsource-variable/ibm-plex-sans": "5.3.0",
     "@gsap/react": "2.1.2",
+    "@ifsoul/adapter-sdk": "file:vendor/release050-cc2c16233fb6/ifsoul-adapter-sdk-0.5.0.tgz",
+    "@ifsoul/core": "file:vendor/release050-bb111cf4645b/ifsoul-core-0.5.0.tgz",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "cmdk": "1.1.1",
     "gsap": "3.15.1",
     "lucide-react": "1.69.0",
     "radix-ui": "1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "tailwind-merge": "3.7.0",
-    "tailwindcss": "4.3.4",
-    "ajv": "8.20.0",
-    "ajv-formats": "3.0.1",
-    "@ifsoul/adapter-sdk": "file:vendor/ifsoul-adapter-sdk-0.4.0.tgz"
+    "tailwindcss": "4.3.4"
   },
   "bundledDependencies": [
     "@ifsoul/core",

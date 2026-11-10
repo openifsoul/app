@@ -1,3 +1,12 @@
+import {
+  createGameConnectionBroker,
+  resolveGamePair,
+  gameDeviceRequest,
+} from "./game-connections.js";
+import { createGameExecutor } from "./game-executor.js";
+import { createAppBehavior } from "./behavior.js";
+import { createSQLParticipantStore } from "../../runtime-host/src/participant-sessions.js";
+import type { SQLDriver } from "@ifsoul/core/memory/sql";
 import { trustedLocalRequest } from "./app-auth.js";
 import {
   resolveAppResourcePolicy,
@@ -54,6 +63,36 @@ if (process.env.IFSOUL_OLLAMA_PROMPT_BUDGET_BYTES !== undefined)
     },
   };
 const resourcePolicy = resolveAppResourcePolicy(resourceConfiguration);
+const port = Number(process.env.PORT ?? 8788);
+if (!Number.isInteger(port) || port < 1024 || port > 65535)
+  throw Error("Choose a supported listen port");
+const selfHosted = process.env.IFSOUL_PUBLIC_ORIGIN !== undefined;
+const origin = selfHosted
+  ? process.env.IFSOUL_PUBLIC_ORIGIN!
+  : `http://127.0.0.1:${port}`;
+const publicURL = new URL(origin);
+const loopback = ["127.0.0.1", "localhost", "[::1]"];
+if (
+  publicURL.origin !== origin ||
+  publicURL.username ||
+  publicURL.password ||
+  !(
+    publicURL.protocol === "https:" ||
+    (publicURL.protocol === "http:" && loopback.includes(publicURL.hostname))
+  )
+)
+  throw Error("Use an HTTPS public origin or a loopback HTTP fixture");
+const listenHost = process.env.IFSOUL_LISTEN_HOST ?? "127.0.0.1";
+if (
+  !["127.0.0.1", "0.0.0.0", "::1", "::"].includes(listenHost) ||
+  (!selfHosted && listenHost !== "127.0.0.1") ||
+  (publicURL.protocol === "http:" && !["127.0.0.1", "::1"].includes(listenHost))
+)
+  throw Error("Remote listening requires explicit HTTPS service origin");
+if (selfHosted && !process.env.IFSOUL_DATA_DIR)
+  throw Error(
+    "Choose a dedicated persistent IFSOUL_DATA_DIR for the self-hosted service",
+  );
 const directory = resolve(process.env.IFSOUL_DATA_DIR ?? ".local/server");
 mkdirSync(directory, { recursive: true, mode: 0o700 });
 const credentialPath = resolve(directory, "owner.json");
@@ -166,21 +205,137 @@ const clientFor = async (
   }
   throw Error("Provider unavailable");
 };
+let behavior: ReturnType<typeof createAppBehavior> | undefined;
 const service = createCharacterWorkspace({
   memory,
   chatEnvironment: "app",
   runtimeLimits: resourcePolicy.runtime.effective,
   runtimeCeilings: resourcePolicy.runtimeCeilings,
   clientFor,
-  controllerFor: (selection) => async (input, signal) =>
-    selection.provider === "scenario"
-      ? createScenarioController()(input, signal)
-      : createModelController({
-          client: await clientFor(selection),
-          model: selection.model,
-          promptBudgetBytes:
+  controllerFor: (selection) => async (input, signal) => {
+    const controller = async (
+      input: import("@ifsoul/core/runtime").ControllerInput,
+      signal: AbortSignal,
+    ) =>
+      selection.provider === "scenario"
+        ? createScenarioController()(input, signal)
+        : createModelController({
+            client: await clientFor(selection),
+            model: selection.model,
+            promptBudgetBytes:
+              selection.provider === "ollama"
+                ? resourcePolicy.ollama.promptBytes
+                : undefined,
+            promptBudgetCeilingBytes:
+              selection.provider === "ollama"
+                ? resourcePolicy.ollama.promptCeilingBytes
+                : undefined,
+            compactOutput:
+              selection.provider === "ollama" &&
+              resourcePolicy.ollama.compactReflection,
+            ...(behavior?.enabled()
+              ? {}
+              : {
+                  reflection: {
+                    memory,
+                    ...(selection.provider === "ollama"
+                      ? {
+                          sourceBudgetBytes:
+                            resourcePolicy.ollama.reflectionSourceBytes,
+                          maxSources: resourcePolicy.ollama.reflectionSources,
+                        }
+                      : {}),
+                  },
+                }),
+          })(input, signal);
+    return behavior
+      ? behavior.guardController(input, signal, controller)
+      : controller(input, signal);
+  },
+});
+const participantDriver: SQLDriver = {
+  prepare: (sql) => privateDB.prepare(sql),
+  transaction(work) {
+    privateDB.exec("BEGIN IMMEDIATE");
+    try {
+      const value = work();
+      privateDB.exec("COMMIT");
+      return value;
+    } catch (error) {
+      privateDB.exec("ROLLBACK");
+      throw error;
+    }
+  },
+};
+behavior = createAppBehavior({
+  store: createSQLParticipantStore(participantDriver),
+  access: { principalId: "local-owner", hostId: "app" },
+  workspace: service,
+});
+const gameBroker = createGameConnectionBroker({
+  store,
+  transaction: (work) => participantDriver.transaction(work),
+});
+const gameExecutor = createGameExecutor({
+  store: createSQLParticipantStore(participantDriver),
+  clientFor: (selection) => clientFor(selection),
+  validate: async (binding) => gameBroker.current(binding),
+});
+const ownerAPI = createAPI({
+  mode: "local",
+  resourcePolicy,
+  ...(selfHosted ? {} : { access: { kind: "local" as const, origin } }),
+  placement: selfHosted ? "selfhost" : "local",
+  ...(selfHosted ? { publicOrigin: origin } : {}),
+  password: secrets.password,
+  encryptionKey: secrets.encryptionKey,
+  store,
+  service,
+  behavior,
+  providers,
+  gameConnections: {
+    controlProof: async () => gameBroker.controlProof("local-owner"),
+    history: async (id) => {
+      const binding = gameBroker
+        .list("local-owner")
+        .find((b) => b.connectionId === id);
+      if (!binding) throw Error("Unknown connection");
+      return gameExecutor.history(binding);
+    },
+    list: async () => gameBroker.list("local-owner"),
+    pair: async (input) =>
+      gameBroker.create(
+        "local-owner",
+        await resolveGamePair(service, providers, input),
+        input.connectionId,
+      ),
+    revoke: async (id) => {
+      gameBroker.revoke("local-owner", id);
+    },
+  },
+  observeBridge: (body) => {
+    observeBridgeRequest(body, memory, {
+      bridgeLimits: resourcePolicy.bridge,
+      retainedHistoryEntries: resourcePolicy.retainedHistoryEntries,
+    });
+  },
+  bridge: async (body, selection) => {
+    const policy = await behavior?.prepareBridge(body);
+    try {
+      return await runBridgeRequest(
+        body,
+        await clientFor(selection),
+        selection.model,
+        memory,
+        {
+          ...(policy ? { behavior: policy } : {}),
+          bridgeLimits: resourcePolicy.bridge,
+          retainedHistoryEntries: resourcePolicy.retainedHistoryEntries,
+          runtimeLimits: resourcePolicy.runtime.effective,
+          runtimeCeilings: resourcePolicy.runtimeCeilings,
+          generationTimeoutCeilingMs:
             selection.provider === "ollama"
-              ? resourcePolicy.ollama.promptBytes
+              ? resourcePolicy.ollama.provider.effective.timeoutMs
               : undefined,
           promptBudgetCeilingBytes:
             selection.provider === "ollama"
@@ -189,76 +344,28 @@ const service = createCharacterWorkspace({
           compactOutput:
             selection.provider === "ollama" &&
             resourcePolicy.ollama.compactReflection,
-          reflection: {
-            memory,
-            ...(selection.provider === "ollama"
-              ? {
-                  sourceBudgetBytes:
-                    resourcePolicy.ollama.reflectionSourceBytes,
-                  maxSources: resourcePolicy.ollama.reflectionSources,
-                }
-              : {}),
-          },
-        })(input, signal),
-});
-const api = createAPI({
-  mode: "local",
-  resourcePolicy,
-  access: {
-    kind: "local",
-    origin: `http://127.0.0.1:${Number(process.env.PORT ?? 8788)}`,
+          reflectionSourceBytes: resourcePolicy.ollama.reflectionSourceBytes,
+          reflectionSources: resourcePolicy.ollama.reflectionSources,
+          generationTimeoutMs:
+            selection.provider === "ollama"
+              ? resourcePolicy.ollama.generationTimeoutMs
+              : undefined,
+          promptBudgetBytes:
+            selection.provider === "ollama"
+              ? resourcePolicy.ollama.promptBytes
+              : undefined,
+        },
+      );
+    } catch (error) {
+      policy?.validate();
+      throw error;
+    }
   },
-  password: secrets.password,
-  encryptionKey: secrets.encryptionKey,
-  store,
-  service,
-  providers,
-  observeBridge: (body) => {
-    observeBridgeRequest(body, memory, {
-      bridgeLimits: resourcePolicy.bridge,
-      retainedHistoryEntries: resourcePolicy.retainedHistoryEntries,
-    });
-  },
-  bridge: async (body, selection) =>
-    runBridgeRequest(
-      body,
-      await clientFor(selection),
-      selection.model,
-      memory,
-      {
-        bridgeLimits: resourcePolicy.bridge,
-        retainedHistoryEntries: resourcePolicy.retainedHistoryEntries,
-        runtimeLimits: resourcePolicy.runtime.effective,
-        runtimeCeilings: resourcePolicy.runtimeCeilings,
-        generationTimeoutCeilingMs:
-          selection.provider === "ollama"
-            ? resourcePolicy.ollama.provider.effective.timeoutMs
-            : undefined,
-        promptBudgetCeilingBytes:
-          selection.provider === "ollama"
-            ? resourcePolicy.ollama.promptCeilingBytes
-            : undefined,
-        compactOutput:
-          selection.provider === "ollama" &&
-          resourcePolicy.ollama.compactReflection,
-        reflectionSourceBytes: resourcePolicy.ollama.reflectionSourceBytes,
-        reflectionSources: resourcePolicy.ollama.reflectionSources,
-        generationTimeoutMs:
-          selection.provider === "ollama"
-            ? resourcePolicy.ollama.generationTimeoutMs
-            : undefined,
-        promptBudgetBytes:
-          selection.provider === "ollama"
-            ? resourcePolicy.ollama.promptBytes
-            : undefined,
-      },
-    ),
 });
-const port = Number(process.env.PORT ?? 8788);
+
 if (!Number.isInteger(port) || port < 1024 || port > 65535)
   throw Error("Invalid port");
-const origin = `http://127.0.0.1:${port}`,
-  webRoot = resolve("dist/web");
+const webRoot = resolve("dist/web");
 const mime: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -269,11 +376,23 @@ const mime: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
   ".xml": "application/xml; charset=utf-8",
 };
+const api = async (request: Request) => {
+  const path = new URL(request.url).pathname;
+  if (path.startsWith("/api/game/device/")) {
+    const response = await gameDeviceRequest(
+      request,
+      gameBroker,
+      (binding, body) => gameExecutor.execute(binding, body),
+    );
+    return secured(response);
+  }
+  return ownerAPI(request);
+};
 const server = createServer(async (req, res) => {
   try {
-    if (req.headers.host !== `127.0.0.1:${port}`) {
+    if (req.headers.host !== publicURL.host) {
       res.writeHead(403, { Connection: "close" });
-      res.end("Open IfSoul App using its loopback address.");
+      res.end("Open IfSoul App using its configured address.");
       return;
     }
     const pathname = new URL(req.url ?? "/", origin).pathname;
@@ -282,7 +401,15 @@ const server = createServer(async (req, res) => {
       if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(",") : v);
     }
     if (
+      !selfHosted &&
       pathname.startsWith("/api/") &&
+      ![
+        "/api/game/device/redeem",
+        "/api/game/device/ready",
+        "/api/game/device/dialogue",
+        "/api/game/device/revoke",
+        "/api/game/device/owner-proof",
+      ].includes(pathname) &&
       !trustedLocalRequest(
         new Request(new URL(req.url ?? "/", origin), {
           method: req.method,
@@ -386,9 +513,15 @@ const server = createServer(async (req, res) => {
 });
 server.requestTimeout = resourcePolicy.http.requestTimeoutMs;
 server.headersTimeout = resourcePolicy.http.headersTimeoutMs;
-server.listen(port, "127.0.0.1", () => {
-  console.log(`IfSoul App (local): ${origin}`);
-  console.log("Local-only access: no account or password prompt.");
+server.listen(port, listenHost, () => {
+  console.log(
+    `IfSoul App (${selfHosted ? "self-hosted" : "local"}): ${origin}`,
+  );
+  console.log(
+    selfHosted
+      ? "Owner password sign-in required. Preserve the dedicated data directory and keep owner.json private."
+      : "Local-only access: no account or password prompt.",
+  );
 });
 let stopping = false;
 function stop() {

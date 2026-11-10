@@ -1,4 +1,18 @@
-import { bridgeCapabilities } from "@ifsoul/adapter-sdk/bridge";
+import type {
+  GameConnectionPort,
+  GamePairRequest,
+} from "./game-connections.js";
+import {
+  estimateCustomerCost,
+  type BillingPort,
+  type SpendingLimits,
+} from "./billing.js";
+import { SessionError } from "@ifsoul/core/runtime";
+import type { AppBehaviorAPI } from "./behavior.js";
+import {
+  bridgeCapabilities,
+  validBridgeRequest,
+} from "@ifsoul/adapter-sdk/bridge";
 import {
   AppResourceError,
   httpBodyBudget,
@@ -41,6 +55,8 @@ export interface PrivateStore {
 }
 export interface APIOptions {
   mode: "local" | "cloud";
+  placement?: "local" | "selfhost" | "managed";
+  publicOrigin?: string;
   resourcePolicy?: AppResourcePolicy;
   password: string;
   access?:
@@ -56,6 +72,9 @@ export interface APIOptions {
     selection: ProviderSelection,
   ) => Promise<BridgeResponse>;
   demo?: (request: Request) => Promise<Response>;
+  behavior?: AppBehaviorAPI;
+  billing?: BillingPort;
+  gameConnections?: GameConnectionPort;
 }
 const error = (code: string, message: string, status = 400) =>
   Response.json({ ok: false, error: { code, message } }, { status });
@@ -66,6 +85,22 @@ export function createAPI(options: APIOptions) {
     try {
       return secured(await handle(request));
     } catch (reason) {
+      if (reason instanceof SessionError)
+        return secured(
+          error(
+            reason.code,
+            reason.code === "conflict" || reason.code === "stale"
+              ? "Configuration changed. Reload it before saving again."
+              : reason.code === "unauthorized"
+                ? "This change is not allowed by the host configuration."
+                : "Check the behavior configuration and try again.",
+            reason.code === "conflict" || reason.code === "stale"
+              ? 409
+              : reason.code === "unauthorized"
+                ? 403
+                : 400,
+          ),
+        );
       if (reason instanceof AppResourceError && options.resourcePolicy)
         return secured(
           Response.json(
@@ -110,10 +145,19 @@ export function createAPI(options: APIOptions) {
       !trustedLocalRequest(request, options.access.origin)
     )
       return error("forbidden", "Open the app on its loopback address.", 403);
+    if (
+      !options.access &&
+      request.headers.has("origin") &&
+      request.headers.get("origin") !== url.origin
+    )
+      return error("forbidden", "Open this service directly.", 403);
     if (originalPath === "/api/config" && request.method === "GET")
-      return Response.json(
-        appConfig(options.mode, options.resourcePolicy?.browserTimeoutMs),
-      );
+      return Response.json({
+        ...appConfig(options.mode, options.resourcePolicy?.browserTimeoutMs),
+        ...(!options.access ? { auth: "password" } : {}),
+        ...(options.placement ? { placement: options.placement } : {}),
+        ...(options.publicOrigin ? { publicOrigin: options.publicOrigin } : {}),
+      });
     if (
       options.access &&
       options.mode === "cloud" &&
@@ -186,9 +230,201 @@ export function createAPI(options: APIOptions) {
       return Response.json({
         authenticated: auth,
         mode: options.mode,
+        ...(options.placement ? { placement: options.placement } : {}),
         providers: auth ? await options.providers() : [],
       });
     if (!auth) return error("unauthorized", "Sign in to continue.", 401);
+    if (
+      path === "/api/game-connections/control-proof" &&
+      request.method === "POST" &&
+      options.gameConnections
+    ) {
+      try {
+        return Response.json(await options.gameConnections.controlProof());
+      } catch {
+        return error(
+          "conflict",
+          "Local control verification unavailable. Retry later.",
+          409,
+        );
+      }
+    }
+    if (path === "/api/game-connections" && options.gameConnections) {
+      if (request.method === "GET")
+        return Response.json({
+          connections: await options.gameConnections.list(),
+        });
+      if (request.method === "POST") {
+        try {
+          return Response.json(
+            await options.gameConnections.pair(
+              (await readBody(2048)) as GamePairRequest,
+            ),
+          );
+        } catch {
+          return error(
+            "invalid-connection",
+            "Choose an available character, memory and provider, then approve private dialogue.",
+            400,
+          );
+        }
+      }
+    }
+    if (
+      path.startsWith("/api/game-connections/") &&
+      path.endsWith("/history") &&
+      request.method === "GET" &&
+      options.gameConnections
+    ) {
+      try {
+        return Response.json({
+          events: await options.gameConnections.history(
+            path.slice("/api/game-connections/".length, -"/history".length),
+          ),
+        });
+      } catch {
+        return error(
+          "forbidden",
+          "This connection history is not available.",
+          403,
+        );
+      }
+    }
+    if (
+      path.startsWith("/api/game-connections/") &&
+      request.method === "DELETE" &&
+      options.gameConnections
+    ) {
+      try {
+        await options.gameConnections.revoke(
+          path.slice("/api/game-connections/".length),
+        );
+        return Response.json({ ok: true });
+      } catch {
+        return error("forbidden", "This connection cannot be changed.", 403);
+      }
+    }
+    if (path === "/api/billing/estimate" && request.method === "GET") {
+      if (!options.billing)
+        return error(
+          "unavailable",
+          "Billing is not enabled for this service.",
+          404,
+        );
+      const snapshot = await options.billing.read();
+      const tariff = snapshot.tariffs.find(
+        (t) => t.model === url.searchParams.get("model"),
+      );
+      const inputTokens = Number(url.searchParams.get("inputTokens")),
+        outputTokens = Number(url.searchParams.get("outputTokens")),
+        calls = Number(url.searchParams.get("calls"));
+      try {
+        if (
+          !tariff ||
+          !["inputTokens", "outputTokens", "calls"].every((k) =>
+            /^\d{1,10}$/.test(url.searchParams.get(k) ?? ""),
+          )
+        )
+          throw Error();
+        return Response.json({
+          microdollars: estimateCustomerCost(
+            tariff,
+            inputTokens,
+            outputTokens,
+            calls,
+          ),
+          tariffVersion: tariff.version,
+        });
+      } catch {
+        return error(
+          "invalid-estimate",
+          "Enter valid token counts and call count.",
+          400,
+        );
+      }
+    }
+    if (path === "/api/billing" && request.method === "GET")
+      return Response.json(
+        options.billing
+          ? { available: true, ...(await options.billing.read()) }
+          : { available: false },
+      );
+    if (path === "/api/billing/limits" && request.method === "PUT") {
+      if (!options.billing)
+        return error(
+          "unavailable",
+          "Billing is not enabled for this service.",
+          404,
+        );
+      const body = await readBody(2048);
+      try {
+        return Response.json(
+          await options.billing.updateLimits(body as SpendingLimits),
+        );
+      } catch {
+        return error(
+          "conflict",
+          "Limits could not be saved. Refresh and check the allowed amounts.",
+          409,
+        );
+      }
+    }
+
+    if (
+      options.behavior &&
+      options.access?.kind === "principal" &&
+      options.access.id !== options.behavior.principalId
+    )
+      throw new SessionError("unauthorized");
+    if (path === "/api/behavior" && options.behavior) {
+      if (request.method === "GET")
+        return Response.json(
+          {
+            ok: true,
+            value: await options.behavior.read(
+              url.searchParams.get("characterId") ?? undefined,
+            ),
+          },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      if (request.method === "PUT") {
+        const body = await readBody(65536);
+        if (
+          !body ||
+          typeof body !== "object" ||
+          Array.isArray(body) ||
+          Object.keys(body).some(
+            (k) => !["expectedRevision", "config"].includes(k),
+          )
+        )
+          throw new SessionError("invalid");
+        return Response.json(
+          {
+            ok: true,
+            value: await options.behavior.update(
+              body as Parameters<AppBehaviorAPI["update"]>[0],
+            ),
+          },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
+    }
+    if (
+      path === "/api/behavior/state" &&
+      request.method === "GET" &&
+      options.behavior
+    )
+      return Response.json(
+        {
+          ok: true,
+          value: await options.behavior.inspect(
+            url.searchParams.get("sessionId") ?? "",
+            url.searchParams.get("npcId") ?? "",
+          ),
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+
     if (path === "/api/resource-policy" && request.method === "GET")
       return Response.json(
         options.resourcePolicy?.metadata ?? {
@@ -222,6 +458,31 @@ export function createAPI(options: APIOptions) {
           "An operation is already running. Wait for its result.",
           409,
         );
+      const body = await readBody();
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        return error("invalid-request", "Enter a bounded bridge request.");
+      if ((body as { version: unknown }).version !== "ifsoul-bridge/0.4.0")
+        return error("unsupported-version", "Use IfSoul bridge version 0.4.0.");
+      if (options.behavior?.enabled()) {
+        if (!validBridgeRequest(body, options.resourcePolicy?.bridge))
+          throw new SessionError("invalid");
+        const gate = await options.behavior.prepareBridge(
+          body as BridgeRequest,
+        );
+        if (gate && !gate.allowed) {
+          if ((body as BridgeRequest).operation === "decide")
+            return error(
+              "policy",
+              "The configured reaction policy withheld an action.",
+              400,
+            );
+          return Response.json({
+            choiceId: "",
+            speech: "",
+            source: "fallback",
+          });
+        }
+      }
       const providerId = url.searchParams.get("provider"),
         model = url.searchParams.get("model");
       const provider = (await options.providers()).find(
@@ -237,11 +498,6 @@ export function createAPI(options: APIOptions) {
           "unavailable",
           "Choose an available model using provider and model URL parameters.",
         );
-      const body = await readBody();
-      if (!body || typeof body !== "object" || Array.isArray(body))
-        return error("invalid-request", "Enter a bounded bridge request.");
-      if ((body as { version: unknown }).version !== "ifsoul-bridge/0.4.0")
-        return error("unsupported-version", "Use IfSoul bridge version 0.4.0.");
       if (busy)
         return error(
           "busy",
@@ -401,11 +657,16 @@ export function createAPI(options: APIOptions) {
         );
       busy = true;
       try {
+        const behaviorGate =
+          path === "/api/run" && options.behavior
+            ? await options.behavior.prepareRun(body)
+            : { allowed: true };
         const providers = await options.providers();
         const provider = providers.find((p) => p.id === body.provider);
         if (
-          !provider?.available ||
-          !provider.models.some((m) => m.id === body.model)
+          behaviorGate.allowed &&
+          (!provider?.available ||
+            !provider.models.some((m) => m.id === body.model))
         )
           return error(
             "unavailable",

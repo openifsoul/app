@@ -1,0 +1,12 @@
+IfSoul App
+
+This project is licensed under the Apache License, Version 2.0. See LICENSE.
+
+Adapted user interface components include material from:
+
+- shadcn/ui, Copyright (c) 2023 shadcn, MIT License.
+  See LICENSES/shadcn-MIT.txt.
+- Cuelark, Copyright (c) 2026 Cuelark, MIT License.
+  See LICENSES/cuelark-MIT.txt.
+
+Dependencies retain their own licenses and notices.

@@ -17,3 +17,13 @@ export type {
 } from "../../runtime-host/src/memory-archive.js";
 
 export * from "./resource-policy.js";
+export * from "../../runtime-host/src/participant-sessions.js";
+export * from "../../runtime-host/src/group-scheduler.js";
+export * from "../../runtime-host/src/behavior.js";
+export * from "./behavior.js";
+
+export * from "./billing.js";
+
+export * from "./game-connections.js";
+
+export * from "./game-executor.js";

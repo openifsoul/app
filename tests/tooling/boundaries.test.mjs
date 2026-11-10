@@ -90,6 +90,17 @@ test("public App has no private/account package, sibling import or browser backe
 for (const [label, stem, receiptFile] of [
   ["Core", "ifsoul-core-0.4.0", "core-receipt.json"],
   ["SDK", "ifsoul-adapter-sdk-0.4.0", "sdk-receipt.json"],
+  ...["core", "sdk"].map((label) => {
+    const receiptFile = `${label}-participants-receipt.json`;
+    const receipt = JSON.parse(
+      readFileSync(resolve(root, `vendor/${receiptFile}`), "utf8"),
+    );
+    return [
+      `${label} participant source`,
+      receipt.archive.replace(/\.tgz$/, ""),
+      receiptFile,
+    ];
+  }),
 ]) {
   test(`pinned ${label} archive contains no local data, identity service, executable automation or secrets`, () => {
     const receipt = JSON.parse(
@@ -101,7 +112,7 @@ for (const [label, stem, receiptFile] of [
         .digest("hex"),
       receipt.sha256,
     );
-    assert.match(receipt.commit, /^[a-f0-9]{40}$/);
+    assert.match(receipt.commit ?? receipt.baseCommit, /^[a-f0-9]{40}$/);
     const members = execFileSync(
       "tar",
       ["-tzf", resolve(root, `vendor/${stem}.tgz`)],

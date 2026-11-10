@@ -15,6 +15,7 @@ export interface ProviderOption {
 export interface LabStatus {
   authenticated: boolean;
   mode: "cloud" | "local";
+  placement?: "local" | "selfhost" | "managed";
   providers: ProviderOption[];
   snapshot?: LabSnapshot;
 }

@@ -5,9 +5,12 @@ const read = async (name) =>
 const release = await read("release.json");
 const manifest = await read("package.json");
 assert.equal(manifest.version, release.version);
-assert.equal(release.version, "0.4.0");
+assert.equal(release.version, "0.5.0");
 for (const value of Object.values(release.current))
-  assert(value === release.version || value.endsWith("/" + release.version));
+  assert(
+    value === "0.4.0" || value.endsWith("/0.4.0"),
+    "Compatible format family must remain unchanged",
+  );
 for (const [name, pin] of Object.entries({
   ...manifest.dependencies,
   ...manifest.devDependencies,

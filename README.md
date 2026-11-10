@@ -16,14 +16,15 @@ pnpm build:web
 pnpm start
 ```
 
-Open http://127.0.0.1:8788. Synthetic scenario mode works without a model. Connect
+Open http://127.0.0.1:8788. See the [App interface guide](docs/app-interface.md) for navigation, character and memory tables, and request inspection. Synthetic scenario mode works without a model. Connect
 an OpenAI key in Settings or run Ollama locally (default `http://127.0.0.1:11434`).
 Provider credentials are encrypted separately from character memory. Local data
 is stored in `.local/server`; `IFSOUL_DATA_DIR` selects another directory and
 `PORT` selects the loopback port. Preserve this directory when upgrading. The
-server rejects foreign Host/Origin requests. It intentionally listens only on
-loopback; remote hosting must supply verified authentication and trusted storage
-composition rather than expose this local server.
+server rejects foreign Host/Origin requests. It listens on loopback by default.
+For authenticated self-hosting, configure an explicit HTTPS public origin and
+dedicated data directory as described in the
+[self-hosted service setup](docs/game-connections.md#operate-a-self-hosted-service).
 
 `pnpm lab demo --db .local/lab.sqlite` runs the separate synthetic-host CLI.
 Laboratory routes are local-only. Games own movement, combat and authoritative
@@ -103,3 +104,12 @@ For runtime-only self-host configuration, safe capability metadata, separate byt
 
 The current IfSoul format is **0.4.0**. Matching version numbers do not make distinct format families interchangeable.
 See [compatibility](docs/compatibility.md) for identifiers, validation and archive semantics.
+
+See [participant sessions](docs/sessions.md) for the additive trusted session API.
+
+See [behavior configuration and dynamic parameters](docs/behavior.md) for shared goals,
+reaction policy and evidence-linked state.
+
+See [memory location, providers and spending](docs/billing-memory.md) for service placement, the optional customer billing capability and final-price estimates.
+
+See [Connect Minecraft through the App](docs/game-connections.md) for local companion setup, service pairing, private dialogue and connection controls.

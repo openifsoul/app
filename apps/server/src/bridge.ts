@@ -3,7 +3,11 @@ import {
   resolveBridgeLimits,
   type BridgeLimits,
 } from "@ifsoul/adapter-sdk/bridge";
-import type { RuntimeLimits } from "@ifsoul/core/runtime";
+import type {
+  RuntimeLimits,
+  ControllerInput,
+  AgentController,
+} from "@ifsoul/core/runtime";
 import { createHash } from "node:crypto";
 export interface BridgeRequest {
   version: string;
@@ -42,7 +46,7 @@ export interface BridgeRequest {
 export interface BridgeResponse {
   choiceId: string;
   speech: string;
-  source: "llm";
+  source: "llm" | "fallback";
 }
 
 import type { ModelClient } from "@ifsoul/core/model-providers/types";
@@ -69,6 +73,10 @@ import {
 } from "../../runtime-host/src/bridge-memory.js";
 
 export interface BridgeExecutionPolicy {
+  behavior?: {
+    context: NonNullable<ControllerInput["behavior"]>;
+    validate: () => void;
+  };
   generationTimeoutMs?: number;
   generationTimeoutCeilingMs?: number;
   promptBudgetBytes?: number;
@@ -455,13 +463,15 @@ export async function runBridgeRequest(
     options,
   );
   const latestUserMessage =
-    request.operation === "chat"
-      ? request.context
-      : latestBridgeUserMessage(
-          memory,
-          request.memoryId ?? request.character.id,
-          request.character.id,
-        );
+    options.behavior && request.operation !== "chat"
+      ? ""
+      : request.operation === "chat"
+        ? request.context
+        : latestBridgeUserMessage(
+            memory,
+            request.memoryId ?? request.character.id,
+            request.character.id,
+          );
   // The provider wrapper supplies retained continuation; omit its duplicate raw history
   // before the controller's first packing pass as well as the final wire packing pass.
   session.context.observedState.properties =
@@ -471,86 +481,121 @@ export async function runBridgeRequest(
         (request.operation === "decide" ||
           !p.propertyId.startsWith("unverified-current-context-")),
     );
+  const guardController =
+    (controller: AgentController): AgentController =>
+    async (input, signal) => {
+      const output = await controller(
+        {
+          ...input,
+          ...(options.behavior ? { behavior: options.behavior.context } : {}),
+        },
+        signal,
+      );
+      options.behavior?.validate();
+      return output;
+    };
   try {
     const runtime = createRuntime({
       memory: {
         ...memory,
         putCharacter: (value) => success(value),
+        ...(options.behavior ? { recall: () => success([]) } : {}),
         getExchange: () => success(undefined),
         commit: () => success(undefined),
         recall: () => success([]),
       },
-      controller: createModelController({
-        client: {
-          id: client.id,
-          generate(input) {
-            // The provider receives this exact schema through its structured-output port.
-            // Avoid embedding a second escaped copy in the demo user prompt.
-            const prompt = JSON.parse(input.prompt) as Record<string, unknown>;
-            delete prompt.requiredContentSchema;
-            const briefing = prompt.currentBriefing as
-              | { observedState?: { properties?: { propertyId: string }[] } }
-              | undefined;
-            if (briefing?.observedState?.properties)
-              briefing.observedState.properties =
-                briefing.observedState.properties.filter(
-                  (p) =>
-                    !p.propertyId.startsWith("unverified-browser-history-") &&
-                    (request.operation === "decide" ||
-                      !p.propertyId.startsWith("unverified-current-context-")),
-                );
-            if (request.operation === "speak") {
-              delete prompt.latestUserMessage;
-              prompt.languageReferenceMessage = latestUserMessage;
-              prompt.operation = "host-speech";
-              prompt.hostSpeechContext = request.context;
-              prompt.speechTrigger = "host";
-            }
-            const hostSpeechPolicy =
-              request.operation === "speak"
-                ? " This is host-triggered speech: react to hostSpeechContext, which is unverified scene context, not a user utterance. languageReferenceMessage is the last actual user utterance for language continuity only; do not answer that old question again. Never choose the response language from hostSpeechContext. If no actual user utterance exists, use the character's speechStyle language unless an explicit SDK locale is supplied."
-                : "";
-            const replyLanguage = modelReplyLanguagePolicy(
-              request.language,
-              request.operation === "speak"
-                ? "languageReferenceMessage"
-                : "latestUserMessage",
-            );
-            // The controller already supplies provenance and actor policies. Replace
-            // its default language rule rather than duplicating both policies on
-            // every bridge request (including context-constrained local models).
-            const system = `${input.system.replace(modelReplyLanguagePolicy(), "")} Recall across listed hosts when asked; follow the structured-output schema.${hostSpeechPolicy} ${replyLanguage}`;
-            return client.generate({
-              ...input,
-              system,
-              prompt: fitModelPrompt(
-                {
-                  ...prompt,
-                  continuation: projectBridgeRecallForModel(
-                    continuation,
-                    request.operation === "decide" ? "" : latestUserMessage,
-                  ),
-                },
+      controller: guardController(
+        createModelController({
+          client: {
+            id: client.id,
+            generate(input) {
+              // The provider receives this exact schema through its structured-output port.
+              // Avoid embedding a second escaped copy in the demo user prompt.
+              const prompt = JSON.parse(input.prompt) as Record<
+                string,
+                unknown
+              >;
+              delete prompt.requiredContentSchema;
+              if (options.behavior) {
+                delete prompt.continuation;
+                delete prompt.memoryReflection;
+              }
+              const briefing = prompt.currentBriefing as
+                | { observedState?: { properties?: { propertyId: string }[] } }
+                | undefined;
+              if (briefing?.observedState?.properties)
+                briefing.observedState.properties =
+                  briefing.observedState.properties.filter(
+                    (p) =>
+                      !p.propertyId.startsWith("unverified-browser-history-") &&
+                      (request.operation === "decide" ||
+                        !p.propertyId.startsWith(
+                          "unverified-current-context-",
+                        )),
+                  );
+              if (request.operation === "speak") {
+                delete prompt.latestUserMessage;
+                prompt.languageReferenceMessage = latestUserMessage;
+                prompt.operation = "host-speech";
+                prompt.hostSpeechContext = request.context;
+                prompt.speechTrigger = "host";
+              }
+              const hostSpeechPolicy =
+                request.operation === "speak"
+                  ? " This is host-triggered speech: react to hostSpeechContext, which is unverified scene context, not a user utterance. languageReferenceMessage is the last actual user utterance for language continuity only; do not answer that old question again. Never choose the response language from hostSpeechContext. If no actual user utterance exists, use the character's speechStyle language unless an explicit SDK locale is supplied."
+                  : "";
+              const replyLanguage = modelReplyLanguagePolicy(
+                request.language,
+                request.operation === "speak"
+                  ? "languageReferenceMessage"
+                  : "latestUserMessage",
+              );
+              // The controller already supplies provenance and actor policies. Replace
+              // its default language rule rather than duplicating both policies on
+              // every bridge request (including context-constrained local models).
+              const system = `${input.system.replace(modelReplyLanguagePolicy(), "")} Recall across listed hosts when asked; follow the structured-output schema.${hostSpeechPolicy} ${replyLanguage}`;
+              return client.generate({
+                ...input,
                 system,
-                input.schema,
-                promptBudgetBytes,
-                options.promptBudgetCeilingBytes,
-              ),
-            });
+                prompt: fitModelPrompt(
+                  {
+                    ...prompt,
+                    ...(options.behavior
+                      ? {}
+                      : {
+                          continuation: projectBridgeRecallForModel(
+                            continuation,
+                            request.operation === "decide"
+                              ? ""
+                              : latestUserMessage,
+                          ),
+                        }),
+                  },
+                  system,
+                  input.schema,
+                  promptBudgetBytes,
+                  options.promptBudgetCeilingBytes,
+                ),
+              });
+            },
           },
-        },
-        model,
-        promptBudgetBytes,
-        promptBudgetCeilingBytes: options.promptBudgetCeilingBytes,
-        compactOutput: options.compactOutput,
-        reflection: {
-          memory,
-          memoryId: request.memoryId ?? request.character.id,
-          perspectiveCharacterId: request.character.id,
-          sourceBudgetBytes: options.reflectionSourceBytes,
-          maxSources: options.reflectionSources,
-        },
-      }),
+          model,
+          promptBudgetBytes,
+          promptBudgetCeilingBytes: options.promptBudgetCeilingBytes,
+          compactOutput: options.compactOutput,
+          ...(options.behavior
+            ? {}
+            : {
+                reflection: {
+                  memory,
+                  memoryId: request.memoryId ?? request.character.id,
+                  perspectiveCharacterId: request.character.id,
+                  sourceBudgetBytes: options.reflectionSourceBytes,
+                  maxSources: options.reflectionSources,
+                },
+              }),
+        }),
+      ),
       limits: {
         maxMemoryRecords: 20,
         maxMemoryBytes: 32_768,

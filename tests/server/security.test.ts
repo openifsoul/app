@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createAPI, type PrivateStore } from "../../apps/server/src/api.js";
 import {
+  secured,
   authenticated,
   decryptCredential,
   encryptCredential,
@@ -420,4 +421,13 @@ test("profile endpoints require owner session, same origin and provider allowlis
   } finally {
     h.memory.close();
   }
+});
+
+test("App CSP permits only the fixed consent-protected loopback companion", () => {
+  const response = secured(new Response("ok"));
+  const csp = response.headers.get("content-security-policy")!;
+  assert(csp.includes("connect-src 'self' http://127.0.0.1:8811;"));
+  assert(
+    !csp.includes("http://127.0.0.1:*") && !csp.includes("http://localhost"),
+  );
 });

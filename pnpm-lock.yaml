@@ -15,11 +15,11 @@ importers:
         specifier: 2.1.2
         version: 2.1.2(gsap@3.15.1)(react@19.3.1)
       '@ifsoul/adapter-sdk':
-        specifier: file:vendor/ifsoul-adapter-sdk-0.4.0.tgz
-        version: file:vendor/ifsoul-adapter-sdk-0.4.0.tgz
+        specifier: file:vendor/release050-cc2c16233fb6/ifsoul-adapter-sdk-0.5.0.tgz
+        version: file:vendor/release050-cc2c16233fb6/ifsoul-adapter-sdk-0.5.0.tgz
       '@ifsoul/core':
-        specifier: file:vendor/ifsoul-core-0.4.0.tgz
-        version: file:vendor/ifsoul-core-0.4.0.tgz
+        specifier: file:vendor/release050-bb111cf4645b/ifsoul-core-0.5.0.tgz
+        version: file:vendor/release050-bb111cf4645b/ifsoul-core-0.5.0.tgz
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -32,6 +32,9 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      cmdk:
+        specifier: 1.1.1
+        version: 1.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       gsap:
         specifier: 3.15.1
         version: 3.15.1
@@ -264,14 +267,14 @@ packages:
       gsap: ^3.12.5
       react: '>=17'
 
-  '@ifsoul/adapter-sdk@file:vendor/ifsoul-adapter-sdk-0.4.0.tgz':
-    resolution: {integrity: sha512-QoNUXX7WJzoEEdjWDw2UPn9wiQEjagAV3WRI1HyLaRiuZ4oTRERQmpVfeHvULF7hRmvKAiWcN81Q5SE5aIk+Ng==, tarball: file:vendor/ifsoul-adapter-sdk-0.4.0.tgz}
-    version: 0.4.0
+  '@ifsoul/adapter-sdk@file:vendor/release050-cc2c16233fb6/ifsoul-adapter-sdk-0.5.0.tgz':
+    resolution: {integrity: sha512-JnPtgXnvBNrJOEHTuoyQy5OyqRS2gCn5kMti0OsqEA59f+zUWyb0KPhyCbBMxs8s0t3ksvfcqDaM2m6oznx0Qg==, tarball: file:vendor/release050-cc2c16233fb6/ifsoul-adapter-sdk-0.5.0.tgz}
+    version: 0.5.0
     engines: {node: '>=22.18'}
 
-  '@ifsoul/core@file:vendor/ifsoul-core-0.4.0.tgz':
-    resolution: {integrity: sha512-adp0DMQf8xgfXoH39Ui+tju6jEQ2auHv3KggiESw6zR+trZFYrm1CYLPuinOmHNPlpv29G8FC6C1S4bYEg0fYQ==, tarball: file:vendor/ifsoul-core-0.4.0.tgz}
-    version: 0.4.0
+  '@ifsoul/core@file:vendor/release050-bb111cf4645b/ifsoul-core-0.5.0.tgz':
+    resolution: {integrity: sha512-Pt4xxR1jJqnrcyP/fOuf97I1SBDSSsawCHE/67g09+Mu/ZDI46mWbi6uhr8d4xn2WYo+YAu6Qu0iy8sVDxda7A==, tarball: file:vendor/release050-bb111cf4645b/ifsoul-core-0.5.0.tgz}
+    version: 0.5.0
     engines: {node: '>=22.18 <25'}
 
   '@jridgewell/gen-mapping@0.3.13':
@@ -1334,6 +1337,12 @@ packages:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
     engines: {node: '>=6'}
 
+  cmdk@1.1.1:
+    resolution: {integrity: sha512-Vsv7kFaXm+ptHDMZ7izaRsP70GgrW9NBNGswt9OZaVBLlE0SNpDq8eu/VGXyF9r7M0azK3Wy7OlYXsuyYLFzHg==}
+    peerDependencies:
+      react: ^18 || ^19 || ^19.0.0-rc
+      react-dom: ^18 || ^19 || ^19.0.0-rc
+
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
@@ -1758,9 +1767,9 @@ snapshots:
       gsap: 3.15.1
       react: 19.3.1
 
-  '@ifsoul/adapter-sdk@file:vendor/ifsoul-adapter-sdk-0.4.0.tgz': {}
+  '@ifsoul/adapter-sdk@file:vendor/release050-cc2c16233fb6/ifsoul-adapter-sdk-0.5.0.tgz': {}
 
-  '@ifsoul/core@file:vendor/ifsoul-core-0.4.0.tgz':
+  '@ifsoul/core@file:vendor/release050-bb111cf4645b/ifsoul-core-0.5.0.tgz':
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
@@ -2750,6 +2759,18 @@ snapshots:
       clsx: 2.1.1
 
   clsx@2.1.1: {}
+
+  cmdk@1.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+    dependencies:
+      '@radix-ui/react-compose-refs': 1.1.5(@types/react@19.3.0)(react@19.3.1)
+      '@radix-ui/react-dialog': 1.3.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-id': 1.1.4(@types/react@19.3.0)(react@19.3.1)
+      '@radix-ui/react-primitive': 2.2.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    transitivePeerDependencies:
+      - '@types/react'
+      - '@types/react-dom'
 
   csstype@3.2.3: {}
 

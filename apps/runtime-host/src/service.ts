@@ -791,6 +791,9 @@ export function createModelController(options: {
           : {}),
         operation: input.operation === "plan" ? "plan" : "chat",
         portrayal: input.portrayal ?? null,
+        ...(input.behavior
+          ? { behavior: structuredClone(input.behavior) }
+          : {}),
         character: {
           name: input.character.profile.name,
           description: input.character.profile.description,

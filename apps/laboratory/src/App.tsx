@@ -14,29 +14,39 @@ import {
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
 } from "./components/ui/breadcrumb";
+import {
+  WorkspaceBreadcrumbContext,
+  type WorkspaceTrail,
+} from "./lib/workspace-breadcrumbs";
 import { useRuntimeAuth } from "./lib/runtime-auth";
 import { BrandMark } from "./components/BrandMark";
-import { useTheme } from "./lib/theme";
 import { Characters } from "./components/Characters";
+import { Memories } from "./components/Memories";
+import { Games } from "./components/Games";
+import { BillingSettings } from "./components/BillingSettings";
+import { Laboratory } from "./components/Laboratory";
 import type {
   CharacterDraft,
   CharacterTemplate,
   CharacterSummary,
 } from "../../runtime-host/src/service-types";
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ArrowRight,
-  FlaskConical,
-  LoaderCircle,
-  Moon,
-  RefreshCw,
-  Sun,
-} from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 import { Button } from "./components/ui/button";
-import { Badge } from "./components/ui/badge";
+import { Label } from "./components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import { Settings } from "./components/Settings";
-import { ChatPanel, EvidencePanel, PlanPanel } from "./components/Workspace";
+import { BehaviorSettings } from "./components/BehaviorSettings";
+import { ChatPanel } from "./components/Workspace";
 import {
   api,
   ApiError,
@@ -56,6 +66,89 @@ const readDraft = (id = "character-lumen", userId = "local") => {
   }
 };
 
+function ContextSelection({
+  scope,
+  characters,
+  profileId,
+  memoryId,
+  busy,
+  onSelect,
+}: {
+  scope: string;
+  characters: CharacterSummary[];
+  profileId: string;
+  memoryId: string;
+  busy: boolean;
+  onSelect: (profileId: string, memoryId: string) => Promise<void>;
+}) {
+  const [error, setError] = useState("");
+  async function select(profile: string, memory: string) {
+    setError("");
+    try {
+      await onSelect(profile, memory);
+    } catch (reason) {
+      setError(friendlyError(reason));
+    }
+  }
+  return (
+    <fieldset
+      className="app-context-selection"
+      disabled={busy}
+      aria-label={`${scope} character and memory`}
+    >
+      <div>
+        <Label htmlFor={`${scope}-profile`}>Character profile</Label>
+        <Select
+          value={profileId}
+          disabled={busy}
+          onValueChange={(id) => void select(id, memoryId)}
+        >
+          <SelectTrigger id={`${scope}-profile`}>
+            <SelectValue placeholder="Choose a character" />
+          </SelectTrigger>
+          <SelectContent>
+            {characters.map((character) => (
+              <SelectItem
+                key={character.characterId}
+                value={character.characterId}
+              >
+                {character.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor={`${scope}-memory`}>Memory history</Label>
+        <Select
+          value={memoryId}
+          disabled={busy}
+          onValueChange={(id) => void select(profileId, id)}
+        >
+          <SelectTrigger id={`${scope}-memory`}>
+            <SelectValue placeholder="Choose a memory" />
+          </SelectTrigger>
+          <SelectContent>
+            {characters.map((character) => (
+              <SelectItem
+                key={character.characterId}
+                value={character.characterId}
+              >
+                {character.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {error && (
+        <p className="app-context-error" role="alert">
+          {error}
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
 function WorkspaceApp() {
   const auth = useRuntimeAuth();
   const laboratoryAvailable =
@@ -72,6 +165,15 @@ function WorkspaceApp() {
       : "chat";
   };
   const [section, setSection] = useState<AppSection>(sectionForPath);
+  const [sectionTrails, setSectionTrails] = useState<
+    Record<string, WorkspaceTrail>
+  >({});
+  const registerTrail = useCallback(
+    (section: string, trail: WorkspaceTrail) => {
+      setSectionTrails((previous) => ({ ...previous, [section]: trail }));
+    },
+    [],
+  );
   function navigate(next: AppSection) {
     if (next === "laboratory" && !laboratoryAvailable) return;
     setSection(next);
@@ -84,6 +186,7 @@ function WorkspaceApp() {
   }, [laboratoryAvailable]);
   const [status, setStatus] = useState<LabStatus | null>(null);
   const [snapshot, setSnapshot] = useState<LabSnapshot | null>(null);
+  const trail: WorkspaceTrail = sectionTrails[section] ?? { items: [] };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
@@ -100,10 +203,9 @@ function WorkspaceApp() {
   const selectedMemory = useRef("character-lumen");
   const draftKey = (profile: string, memory: string) =>
     profile === memory ? profile : `${profile}:${memory}`;
-  const { theme, toggleTheme } = useTheme();
   useEffect(() => {
-    document.title = `IfSoul · ${SECTION_LABELS[section]}`;
-  }, [section]);
+    document.title = `IfSoul · ${[SECTION_LABELS[section], ...trail.items.map((item) => item.label)].join(" · ")}`;
+  }, [section, trail]);
   const active = useRef(false);
   const retry = useRef<{ fingerprint: string; requestId: string } | null>(null);
 
@@ -226,6 +328,7 @@ function WorkspaceApp() {
       }
       retry.current = null;
       if (operation === "chat") setDraft("");
+      return result;
     } catch (reason) {
       setOperationError(friendlyError(reason));
       if (reason instanceof ApiError && reason.code === "unauthorized")
@@ -305,245 +408,251 @@ function WorkspaceApp() {
   }
 
   return (
-    <SidebarProvider>
-      <AppSidebar section={section} onNavigate={navigate} />
-      <SidebarInset className="ifsoul-app-inset">
-        <header className="app-topbar">
-          <SidebarTrigger className="touch-target" />
-          <Separator orientation="vertical" className="h-5" />
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbPage>{SECTION_LABELS[section]}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <div className="app-topbar-actions">
-            <Badge variant="outline">
-              {auth.config.mode === "local" ? "Local runtime" : "Cloud runtime"}
-            </Badge>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-              onClick={toggleTheme}
-            >
-              {theme === "dark" ? <Sun /> : <Moon />}
-            </Button>
-          </div>
-        </header>
-        <div className="app-page">
-          <div className="app-page-heading">
-            <div>
-              <div className="eyebrow">IFSOUL APP</div>
-              <h1>{SECTION_LABELS[section]}</h1>
-              <p>
-                {section === "chat"
-                  ? "One character. A conversation that continues."
-                  : section === "characters"
-                    ? "Create a character, then choose which history it carries."
-                    : section === "memory"
-                      ? "The events and conversations your character can recall."
-                      : section === "settings"
-                        ? "Choose where it runs and how it thinks."
-                        : "Local synthetic host, plans and diagnostic evidence."}
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => void reload()}
-              disabled={loading || Boolean(pending)}
-              aria-label="Refresh workspace"
-            >
-              <RefreshCw className={loading ? "animate-spin" : ""} />
-              <span>Refresh</span>
-            </Button>
-          </div>
-          {error && (
-            <div className="feedback error" role="alert">
-              {error}
-            </div>
-          )}
-          {loading && !status ? (
-            <div className="connection-state" role="status">
-              <LoaderCircle className="animate-spin" />
-              <p>Opening your characters and memory…</p>
-            </div>
-          ) : !status || !status.authenticated ? (
-            <div className="feedback error" role="alert">
-              <p>
-                {error ??
-                  "This session is unavailable. Refresh the page to reconnect."}
-              </p>
-              <Button variant="outline" onClick={() => void reload()}>
-                Try again
+    <WorkspaceBreadcrumbContext.Provider value={registerTrail}>
+      <SidebarProvider className="app-workspace">
+        <AppSidebar section={section} onNavigate={navigate} />
+        <SidebarInset className="ifsoul-app-inset">
+          <header className="app-topbar">
+            <SidebarTrigger className="touch-target" />
+            <Separator orientation="vertical" className="h-5" />
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  {trail.items.length ? (
+                    <BreadcrumbLink
+                      href={`/app/${section}`}
+                      aria-disabled={trail.disabled || undefined}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (!trail.disabled) {
+                          if (trail.onRoot) trail.onRoot();
+                          else navigate(section);
+                        }
+                      }}
+                    >
+                      {SECTION_LABELS[section]}
+                    </BreadcrumbLink>
+                  ) : (
+                    <BreadcrumbPage>{SECTION_LABELS[section]}</BreadcrumbPage>
+                  )}
+                </BreadcrumbItem>
+                {trail.items.map((item, index) => (
+                  <Fragment key={`${index}-${item.label}`}>
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem>
+                      {item.onNavigate && index < trail.items.length - 1 ? (
+                        <BreadcrumbLink
+                          href={`/app/${section}`}
+                          aria-disabled={trail.disabled || undefined}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            if (!trail.disabled) item.onNavigate?.();
+                          }}
+                          title={item.label}
+                        >
+                          {item.label}
+                        </BreadcrumbLink>
+                      ) : (
+                        <BreadcrumbPage title={item.label}>
+                          {item.label}
+                        </BreadcrumbPage>
+                      )}
+                    </BreadcrumbItem>
+                  </Fragment>
+                ))}
+              </BreadcrumbList>
+            </Breadcrumb>
+            <div className="app-topbar-actions">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => void reload()}
+                disabled={loading || Boolean(pending)}
+                aria-label="Refresh workspace"
+                title="Refresh workspace"
+              >
+                <RefreshCw className={loading ? "animate-spin" : ""} />
               </Button>
             </div>
-          ) : (
-            <>
-              <div className="character-bar app-character-bar">
-                <div className="character-avatar" aria-hidden="true">
-                  {(snapshot?.persona ?? snapshot?.character)?.profile.name
-                    .split(" ")
-                    .map((word) => word[0])
-                    .slice(0, 2)
-                    .join("") ?? "IF"}
-                  <span />
-                </div>
-                <div>
-                  <h2>
-                    {(snapshot?.persona ?? snapshot?.character)?.profile.name ??
-                      "Your character"}
-                  </h2>
-                  <p>
-                    Memory:{" "}
-                    {snapshot?.character.profile.name ?? "Not connected"}
-                  </p>
-                </div>
-                <Button variant="ghost" onClick={() => navigate("characters")}>
-                  Choose character
-                  <ArrowRight size={14} />
+          </header>
+          <div className="app-page">
+            {error && (
+              <div className="feedback error" role="alert">
+                {error}
+              </div>
+            )}
+            {loading && !status ? (
+              <div className="connection-state" role="status">
+                <LoaderCircle className="animate-spin" />
+                <p>Opening your characters and memory…</p>
+              </div>
+            ) : !status || !status.authenticated ? (
+              <div className="feedback error" role="alert">
+                <p>
+                  {error ??
+                    "This session is unavailable. Refresh the page to reconnect."}
+                </p>
+                <Button variant="outline" onClick={() => void reload()}>
+                  Try again
                 </Button>
               </div>
-              {!selectedProvider?.available && section !== "settings" && (
-                <div className="feedback notice" role="status">
-                  <p>
-                    {provider === "openai"
-                      ? "Connect your OpenAI key in Settings to use this model."
-                      : "Choose an available model connection in Settings."}
-                  </p>
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate("settings")}
-                  >
-                    Open Settings
-                  </Button>
-                </div>
-              )}
-              {operationError && (
-                <div className="feedback error" role="alert">
-                  <span>{operationError}</span>
-                  <Button
-                    variant="outline"
-                    disabled={Boolean(pending)}
-                    onClick={() =>
-                      void run(
-                        section === "laboratory" &&
-                          retry.current?.fingerprint.includes(
-                            '"operation":"plan"',
-                          )
-                          ? "plan"
-                          : "chat",
-                      )
-                    }
-                  >
-                    Retry request
-                  </Button>
-                </div>
-              )}
-              {slow && (
-                <div className="feedback notice" role="status">
-                  <LoaderCircle className="animate-spin" />
-                  Still waiting for the provider. The request is bounded to one
-                  minute; your draft stays here.
-                </div>
-              )}
-              <section
-                hidden={section !== "characters"}
-                aria-label="Character profiles"
-                className="app-narrow-panel"
-              >
-                <Characters
-                  characters={characters}
-                  selected={
-                    snapshot?.persona?.characterId ??
-                    snapshot?.character.characterId ??
-                    "character-lumen"
-                  }
-                  memorySelected={
-                    snapshot?.character.characterId ?? "character-lumen"
-                  }
-                  onMemory={(id) =>
-                    chooseCharacter(selectedCharacter.current, id)
-                  }
-                  provider={provider}
-                  model={selectedModel}
-                  canGenerate={ready && provider !== "scenario"}
-                  busy={Boolean(pending) || characterBusy}
-                  onSelect={chooseCharacter}
-                  onCreate={createCharacter}
-                />
-              </section>
-              <section
-                hidden={section !== "settings"}
-                aria-label="App settings"
-                className="app-narrow-panel"
-              >
-                <Settings
-                  status={status}
-                  provider={provider}
-                  model={selectedModel}
-                  busy={Boolean(pending) || characterBusy}
-                  onProvider={(value) => {
-                    setProvider(value);
-                    setModel("");
-                    setOperationError(null);
-                  }}
-                  onModel={setModel}
-                  onRefresh={refresh}
-                />
-              </section>
-              <section
-                hidden={section !== "chat"}
-                aria-label="Character conversation"
-              >
-                <ChatPanel
-                  snapshot={snapshot}
-                  draft={draft}
-                  setDraft={setDraft}
-                  pending={pending}
-                  ready={ready}
-                  provider={selectedProvider?.label ?? "Provider"}
-                  model={selectedModel}
-                  onSend={() => void run("chat")}
-                />
-              </section>
-              <section
-                hidden={section !== "memory"}
-                aria-label="Character memory"
-              >
-                <EvidencePanel
-                  snapshot={snapshot}
-                  disabled={Boolean(pending) || characterBusy}
-                  onMemoryImported={async (id) => {
-                    setCharacters(await api<CharacterSummary[]>("characters"));
-                    await chooseCharacter(id, id);
-                  }}
-                />
-              </section>
-              {laboratoryAvailable && section === "laboratory" && (
-                <section
-                  className="app-laboratory"
-                  aria-label="Local Laboratory"
-                >
-                  <div className="feedback notice">
-                    <FlaskConical size={18} />
+            ) : (
+              <>
+                {!selectedProvider?.available && section !== "settings" && (
+                  <div className="feedback notice" role="status">
                     <p>
-                      This local synthetic host is a development tool. Plans
-                      remain proposals; it does not control a game or an NPC.
+                      {provider === "openai"
+                        ? "Connect your OpenAI key in Settings to use this model."
+                        : "Choose an available model connection in Settings."}
                     </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => navigate("settings")}
+                    >
+                      Open Settings
+                    </Button>
                   </div>
-                  <PlanPanel
+                )}
+                {operationError && (
+                  <div className="feedback error" role="alert">
+                    <span>{operationError}</span>
+                    <Button
+                      variant="outline"
+                      disabled={Boolean(pending)}
+                      onClick={() =>
+                        void run(
+                          section === "laboratory" &&
+                            retry.current?.fingerprint.includes(
+                              '"operation":"plan"',
+                            )
+                            ? "plan"
+                            : "chat",
+                        )
+                      }
+                    >
+                      Retry request
+                    </Button>
+                  </div>
+                )}
+                {slow && (
+                  <div className="feedback notice" role="status">
+                    <LoaderCircle className="animate-spin" />
+                    Still waiting for the provider. The request is bounded to
+                    one minute; your draft stays here.
+                  </div>
+                )}
+                <section
+                  hidden={section !== "characters"}
+                  aria-label="Character profiles"
+                >
+                  <Characters
+                    characters={characters}
+                    profile={
+                      (snapshot?.persona ?? snapshot?.character)?.profile
+                    }
+                    selected={
+                      snapshot?.persona?.characterId ??
+                      snapshot?.character.characterId ??
+                      "character-lumen"
+                    }
+                    memorySelected={
+                      snapshot?.character.characterId ?? "character-lumen"
+                    }
+                    onMemory={(id) =>
+                      chooseCharacter(selectedCharacter.current, id)
+                    }
+                    provider={provider}
+                    model={selectedModel}
+                    canGenerate={ready && provider !== "scenario"}
+                    busy={Boolean(pending) || characterBusy}
+                    onSelect={chooseCharacter}
+                    onCreate={createCharacter}
+                  />
+                </section>
+                <section
+                  hidden={section !== "behavior"}
+                  aria-label="Behavior configuration"
+                >
+                  <BehaviorSettings
+                    active={section === "behavior"}
+                    characterId={
+                      snapshot?.persona?.characterId ??
+                      snapshot?.character.characterId
+                    }
+                  />
+                </section>
+                <section
+                  hidden={section !== "settings"}
+                  aria-label="App settings"
+                  className="app-narrow-panel"
+                >
+                  <Settings
+                    status={status}
+                    provider={provider}
+                    model={selectedModel}
+                    busy={Boolean(pending) || characterBusy}
+                    onProvider={(value) => {
+                      setProvider(value);
+                      setModel("");
+                      setOperationError(null);
+                    }}
+                    onModel={setModel}
+                    onRefresh={refresh}
+                  />
+                </section>
+                <section
+                  hidden={section !== "balance"}
+                  aria-label="Balance and billing"
+                  className="app-narrow-panel"
+                >
+                  <BillingSettings />
+                </section>
+                <section hidden={section !== "games"} aria-label="Games">
+                  <Games
+                    providers={status.providers}
+                    selectedProvider={provider}
+                    selectedModel={selectedModel}
+                  />
+                </section>
+                <section
+                  hidden={section !== "chat"}
+                  aria-label="Character conversation"
+                >
+                  <ContextSelection
+                    scope="conversation"
+                    characters={characters}
+                    profileId={
+                      snapshot?.persona?.characterId ??
+                      snapshot?.character.characterId ??
+                      "character-lumen"
+                    }
+                    memoryId={
+                      snapshot?.character.characterId ?? "character-lumen"
+                    }
+                    busy={Boolean(pending) || characterBusy}
+                    onSelect={chooseCharacter}
+                  />
+                  <ChatPanel
                     snapshot={snapshot}
+                    draft={draft}
+                    setDraft={setDraft}
                     pending={pending}
                     ready={ready}
-                    onPlan={() => void run("plan")}
+                    provider={selectedProvider?.label ?? "Provider"}
+                    model={selectedModel}
+                    onSend={() => void run("chat")}
                   />
-                  <EvidencePanel
+                </section>
+                <section
+                  hidden={section !== "memory"}
+                  aria-label="Character memory"
+                >
+                  <Memories
+                    characters={characters}
                     snapshot={snapshot}
-                    debug
-                    disabled={Boolean(pending) || characterBusy}
-                    onMemoryImported={async (id) => {
+                    busy={Boolean(pending) || characterBusy}
+                    onSelect={chooseCharacter}
+                    onImported={async (id) => {
                       setCharacters(
                         await api<CharacterSummary[]>("characters"),
                       );
@@ -551,12 +660,30 @@ function WorkspaceApp() {
                     }}
                   />
                 </section>
-              )}
-            </>
-          )}
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+                {laboratoryAvailable && section === "laboratory" && (
+                  <section
+                    className="app-laboratory"
+                    aria-label="Local Laboratory"
+                  >
+                    <Laboratory
+                      snapshot={snapshot}
+                      characters={characters}
+                      pending={Boolean(pending) || characterBusy}
+                      running={pending === "plan"}
+                      ready={ready}
+                      provider={selectedProvider?.label ?? "Provider"}
+                      model={selectedModel}
+                      onSelect={chooseCharacter}
+                      onRun={() => run("plan")}
+                    />
+                  </section>
+                )}
+              </>
+            )}
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </WorkspaceBreadcrumbContext.Provider>
   );
 }
 

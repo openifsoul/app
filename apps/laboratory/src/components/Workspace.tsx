@@ -8,19 +8,11 @@ import {
   Check,
   CheckCheck,
   ChevronRight,
-  CircleDashed,
-  Clock3,
   Database,
-  FileText,
-  FlaskConical,
-  GitBranch,
-  ListChecks,
   LoaderCircle,
   MessageCircle,
   Search,
-  ShieldCheck,
   Sparkles,
-  X,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -245,169 +237,6 @@ export function ChatPanel({
   );
 }
 
-export function PlanPanel({
-  snapshot,
-  pending,
-  ready,
-  onPlan,
-}: PanelProps & { onPlan: () => void }) {
-  const lastPlan = [...(snapshot?.runs ?? [])]
-    .reverse()
-    .find((run) => run.result.type === "plan");
-  const plan = lastPlan?.result.type === "plan" ? lastPlan.result : null;
-  return (
-    <Card className="plan-card">
-      <CardHeader>
-        <div className="panel-title-row">
-          <CardTitle>
-            <ListChecks size={17} />
-            Synthetic host
-          </CardTitle>
-          <Badge variant="outline">
-            <FlaskConical size={11} />
-            Sandbox
-          </Badge>
-        </div>
-        <p className="card-subtitle">
-          A small garden. Two tasks. The host decides.
-        </p>
-      </CardHeader>
-      <CardContent>
-        <div className="host-context">
-          <div className="host-context-label">
-            <span className="status-dot" /> HOST BRIEFING
-          </div>
-          <p>
-            Two herb beds need inspection.
-            <br />
-            One plot is dry. No water is available.
-          </p>
-          <div>
-            <Badge variant="secondary">
-              <Clock3 size={11} />
-              Morning
-            </Badge>
-            <Badge variant="secondary">Water · 0 ml</Badge>
-          </div>
-        </div>
-        {plan ? (
-          <div className="task-list">
-            {plan.proposal.tasks.map((task, index) => {
-              const decision = plan.decision.taskDecisions.find(
-                (item) => item.taskId === task.taskId,
-              );
-              const report = [...plan.reports]
-                .reverse()
-                .find((item) => item.taskId === task.taskId);
-              const rejected = decision?.decision === "rejected";
-              const completed = report?.status === "succeeded";
-              const title =
-                task.intentId === "inspect-area"
-                  ? "Inspect the herb beds"
-                  : task.intentId === "water-plot" ||
-                      task.intentId === "tend-plot"
-                    ? "Water the dry plot"
-                    : "Proposed host task";
-              return (
-                <article
-                  key={task.taskId}
-                  className={`task-row ${rejected ? "task-rejected" : ""}`}
-                >
-                  <div
-                    className={`task-number ${completed ? "task-done" : ""}`}
-                  >
-                    {completed ? (
-                      <Check size={15} />
-                    ) : rejected ? (
-                      <X size={15} />
-                    ) : (
-                      String(index + 1).padStart(2, "0")
-                    )}
-                  </div>
-                  <div className="task-detail">
-                    <h3>{title}</h3>
-                    <div className="task-states">
-                      <span>Proposed</span>
-                      <ChevronRight size={11} />
-                      <span className={rejected ? "rejected-state" : ""}>
-                        {rejected
-                          ? "Rejected"
-                          : decision?.decision === "accepted"
-                            ? "Accepted"
-                            : "Awaiting host"}
-                      </span>
-                      {report && (
-                        <>
-                          <ChevronRight size={11} />
-                          <span className={completed ? "completed-state" : ""}>
-                            {completed
-                              ? "Completed"
-                              : report.status === "failed"
-                                ? "Failed"
-                                : "Outcome pending"}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <p>
-                      {rejected
-                        ? "The host has no water. This task was not completed."
-                        : (report?.summary ??
-                          "Waiting for a host-reported outcome.")}
-                    </p>
-                  </div>
-                </article>
-              );
-            })}
-            <div className="plan-outcome">
-              <ShieldCheck size={15} />
-              <span>
-                {plan.decision.status === "partially-accepted"
-                  ? "Partial acceptance"
-                  : plan.decision.status === "accepted"
-                    ? "Plan accepted"
-                    : "Plan rejected"}{" "}
-                · outcomes recorded separately
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="plan-empty">
-            <CircleDashed size={23} />
-            <h3>No plan requested yet</h3>
-            <p>
-              Ask the selected controller to propose a bounded plan. The
-              synthetic host then accepts or rejects each task.
-            </p>
-          </div>
-        )}
-        <Button className="wide plan-button" onClick={onPlan} disabled={!ready}>
-          {pending === "plan" ? (
-            <LoaderCircle className="animate-spin" />
-          ) : (
-            <GitBranch size={15} />
-          )}
-          {pending === "plan"
-            ? "Requesting a plan…"
-            : plan
-              ? "Request another plan"
-              : "Request a plan"}
-        </Button>
-        <p className="host-note">
-          This host simulates abstract task outcomes. It does not control a game
-          or an NPC.
-        </p>
-        {lastPlan && (
-          <div className="last-plan-note">
-            Last plan · {providerName[lastPlan.provider] ?? "Model"} ·{" "}
-            {time(lastPlan.completedAt)}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 const kindLabels: Record<string, string> = {
   "context-report": "Host context",
   "plan-proposal": "Intention",
@@ -449,29 +278,12 @@ function memoryDescription(memory: MemoryEvent): string {
   );
 }
 
-const stageLabels: Record<string, string> = {
-  context: "Host context received",
-  "selected-memory": "Scoped memory selected",
-  controller: "Controller requested",
-  proposal: "Proposal validated",
-  "host-acceptance": "Host adoption recorded",
-  "host-decision": "Host adoption recorded",
-  "host-outcome": "Host outcome recorded",
-  memory: "Memory saved",
-  dialogue: "Reply proposed",
-  delivery: "Delivery recorded",
-  reuse: "Saved request reused",
-  rejected: "Request safely rejected",
-};
-
 export function EvidencePanel({
   snapshot,
-  debug = false,
   disabled,
   onMemoryImported,
 }: {
   snapshot: LabSnapshot | null;
-  debug?: boolean;
   disabled?: boolean;
   onMemoryImported?: (id: string) => Promise<void>;
 }) {
@@ -501,18 +313,6 @@ export function EvidencePanel({
                 {snapshot?.memories.length ?? 0}
               </span>
             </TabsTrigger>
-            {debug && (
-              <>
-                <TabsTrigger value="trace">
-                  <GitBranch size={14} />
-                  Trace
-                </TabsTrigger>
-                <TabsTrigger value="debug">
-                  <FileText size={14} />
-                  Debug
-                </TabsTrigger>
-              </>
-            )}
           </TabsList>
           <span className="evidence-caption">
             See the source behind the story.
@@ -597,65 +397,6 @@ export function EvidencePanel({
             </div>
           </ScrollArea>
         </TabsContent>
-        {debug && (
-          <>
-            <TabsContent value="trace">
-              <div className="trace-intro">
-                <h3>Last request, step by step</h3>
-                <p>
-                  Observable stages show what was selected, proposed, validated,
-                  and saved.
-                </p>
-              </div>
-              {lastRun ? (
-                <div className="trace-list">
-                  {lastRun.stages.map((stage, index) => (
-                    <div className="trace-step" key={`${stage.stage}-${index}`}>
-                      <span className="trace-index">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <div>
-                        <h4>
-                          {stageLabels[stage.stage] ?? "Request processing"}
-                        </h4>
-                        <p>
-                          {stage.memoryIds
-                            ? `${stage.memoryIds.length} authorized memory records`
-                            : stage.stage === "rejected"
-                              ? "No rejected output was adopted as completed work."
-                              : "Recorded by the current runtime."}
-                        </p>
-                      </div>
-                      <Check size={14} />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <EmptyEvidence
-                  title="Nothing to trace yet"
-                  text="The next request will leave an observable sequence here."
-                />
-              )}
-            </TabsContent>
-            <TabsContent value="debug">
-              <div className="debug-intro">
-                <h3>Technical inspection</h3>
-                <p>
-                  Full technical identifiers and authorized synthetic payloads.
-                  Provider keys are never included.
-                </p>
-              </div>
-              <details className="debug-details">
-                <summary>
-                  Inspect current snapshot <ChevronRight size={14} />
-                </summary>
-                <ScrollArea className="debug-scroll">
-                  <pre>{JSON.stringify(snapshot, null, 2)}</pre>
-                </ScrollArea>
-              </details>
-            </TabsContent>
-          </>
-        )}
       </Tabs>
     </Card>
   );

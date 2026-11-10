@@ -386,7 +386,10 @@ export function httpBodyBudget(
     ["/api/memory/preview", "/api/memory/import"].includes(pathname)
   )
     return policy?.http.archiveBytes ?? 2010000;
-  if (pathname === "/api/characters/import")
+  if (
+    pathname === "/api/characters/import" ||
+    (pathname === "/api/behavior" && method === "PUT")
+  )
     return policy?.http.profileBytes ?? 70000;
   return policy?.http.bodyBytes ?? 16384;
 }
