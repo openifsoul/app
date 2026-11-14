@@ -1,5 +1,7 @@
 import {
   minecraftConnectors,
+  minecraftActionAvailability,
+  type GameAction,
   sameMinecraftTarget,
   validMinecraftTarget,
   type MinecraftTarget,
@@ -10,6 +12,66 @@ import type { PrivateStore, ProviderOption } from "./api.js";
 import type { ProviderSelection } from "@ifsoul/core/model-providers/types";
 import type { CharacterWorkspace } from "../../runtime-host/src/service-types.js";
 
+export type { GameAction };
+function validActions(actions: unknown): actions is GameAction[] {
+  return (
+    Array.isArray(actions) &&
+    (actions.length === 0 ||
+      (actions.length === 1 && ["movement", "colony"].includes(actions[0])) ||
+      (actions.length === 2 &&
+        actions[0] === "movement" &&
+        actions[1] === "defense"))
+  );
+}
+function profileActions(target?: MinecraftTarget): readonly GameAction[] {
+  return minecraftActionAvailability[
+    target?.connector ?? "minecraft-mineflayer"
+  ];
+}
+const bridgeChoiceIds: Record<
+  keyof typeof minecraftConnectors,
+  readonly string[]
+> = {
+  "minecraft-mineflayer": [
+    "follow",
+    "come",
+    "north",
+    "south",
+    "east",
+    "west",
+    "defend",
+  ],
+  "minecraft-citizens": ["follow", "come"],
+  "minecraft-easy-npc": ["come"],
+  "minecraft-minecolonies": ["recall-worker"],
+  "minecraft-customnpcs": ["come"],
+};
+function permittedActions(actions: unknown, target?: MinecraftTarget) {
+  return (
+    validActions(actions) &&
+    actions.length > 0 &&
+    actions.every((action) => profileActions(target).includes(action))
+  );
+}
+const actionIds: Record<string, GameAction> = {
+  follow: "movement",
+  come: "movement",
+  north: "movement",
+  south: "movement",
+  east: "movement",
+  west: "movement",
+  defend: "defense",
+  "recall-worker": "colony",
+};
+const actionResults = new Set([
+  "stopped",
+  "interrupted",
+  "arrived",
+  "target-died",
+  "expired",
+  "failed",
+  "unreachable",
+]);
 export interface GamePairRequest {
   characterId: string;
   memoryId: string;
@@ -18,6 +80,7 @@ export interface GamePairRequest {
   model: string;
   consent: boolean;
   minecraftTarget?: MinecraftTarget;
+  actions?: GameAction[];
 }
 export interface GameBinding extends ProviderSelection {
   connectionId: string;
@@ -30,6 +93,8 @@ export interface GameBinding extends ProviderSelection {
   expiresAt: number;
   revoked: boolean;
   minecraftTarget?: MinecraftTarget;
+  actions?: GameAction[];
+  activeActions?: GameAction[];
   player?: { name: string; uuid: string };
   lastSeen?: number;
 }
@@ -50,6 +115,11 @@ export interface GameConnectionPort {
   revoke(connectionId: string): Promise<void>;
   history(connectionId: string): Promise<unknown[]>;
 }
+const safeText = (value: unknown, max: number): value is string =>
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  value.length <= max &&
+  !/[\p{Cc}\p{Cf}]/u.test(value);
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 const safe = (v: unknown): v is string =>
   typeof v === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(v);
@@ -121,6 +191,9 @@ export function createGameConnectionBroker(options: {
           typeof row.revoked !== "boolean" ||
           (row.minecraftTarget !== undefined &&
             !validMinecraftTarget(row.minecraftTarget)) ||
+          (row.actions !== undefined && !validActions(row.actions)) ||
+          (row.activeActions !== undefined &&
+            !validActions(row.activeActions)) ||
           typeof row.codeHash !== "string" ||
           !Number.isSafeInteger(row.codeExpiresAt) ||
           (row.tokenHash !== undefined && !/^[a-f0-9]{64}$/.test(row.tokenHash))
@@ -233,6 +306,7 @@ export function createGameConnectionBroker(options: {
         | "revision"
         | "expiresAt"
         | "revoked"
+        | "activeActions"
       >,
       existingConnectionId?: string,
     ): GameGrant {
@@ -263,10 +337,13 @@ export function createGameConnectionBroker(options: {
                 "model",
                 "character",
                 "minecraftTarget",
+                "actions",
               ].includes(k),
           ) ||
           (resolved.minecraftTarget !== undefined &&
             !validMinecraftTarget(resolved.minecraftTarget)) ||
+          (resolved.actions !== undefined &&
+            !permittedActions(resolved.actions, resolved.minecraftTarget)) ||
           !safe(resolved.characterId) ||
           !safe(resolved.memoryId) ||
           !resolved.character ||
@@ -370,6 +447,7 @@ export function createGameConnectionBroker(options: {
         upstream: string;
         npcId: string;
       },
+      actionCapabilities?: unknown,
     ) {
       return run((rows) => {
         const r = lookup(rows, token);
@@ -401,6 +479,24 @@ export function createGameConnectionBroker(options: {
           (r.player.uuid !== player.uuid || r.player.name !== player.name)
         )
           fail("conflict");
+        if (
+          actionCapabilities !== undefined &&
+          !validActions(actionCapabilities)
+        )
+          fail("invalid");
+        if (r.actions) {
+          const active = r.actions.filter(
+            (action) =>
+              profileActions(target).includes(action) &&
+              (actionCapabilities as GameAction[] | undefined)?.includes(
+                action,
+              ),
+          );
+          r.activeActions =
+            active.includes("defense") && !active.includes("movement")
+              ? []
+              : active;
+        }
         r.player = { ...player };
         r.revision++;
         r.lastSeen = now();
@@ -487,11 +583,14 @@ export async function resolveGamePair(
           "consent",
           "connectionId",
           "minecraftTarget",
+          "actions",
         ].includes(k),
     ) ||
     input.consent !== true ||
     (input.minecraftTarget !== undefined &&
       !validMinecraftTarget(input.minecraftTarget)) ||
+    (input.actions !== undefined &&
+      !permittedActions(input.actions, input.minecraftTarget)) ||
     !safe(input.characterId) ||
     !safe(input.memoryId) ||
     (input.connectionId !== undefined && !safe(input.connectionId))
@@ -512,6 +611,7 @@ export async function resolveGamePair(
     memoryId: input.memoryId,
     provider: input.provider,
     model: input.model,
+    ...(input.actions ? { actions: input.actions } : {}),
     ...(input.minecraftTarget
       ? { minecraftTarget: input.minecraftTarget }
       : {}),
@@ -572,10 +672,19 @@ export async function gameDeviceRequest(
     if (serverConnectorOnly && !broker.authenticate(token).minecraftTarget)
       fail("unauthorized");
     if (new URL(request.url).pathname.endsWith("/ready")) {
-      if (Object.keys(body).some((k) => !["player", "minecraft"].includes(k)))
+      if (
+        Object.keys(body).some(
+          (k) => !["player", "minecraft", "actionCapabilities"].includes(k),
+        )
+      )
         fail("invalid");
       return reply({
-        connection: broker.ready(token, body.player, body.minecraft),
+        connection: broker.ready(
+          token,
+          body.player,
+          body.minecraft,
+          body.actionCapabilities,
+        ),
       });
     }
     if (path === "/api/game/device/owner-proof") {
@@ -602,16 +711,68 @@ export async function gameDeviceRequest(
       broker.setInspection(token, body.allowed);
       return reply({ ok: true });
     }
-    if (
-      !new URL(request.url).pathname.endsWith("/dialogue") ||
-      Object.keys(body).some((k) => !["requestId", "text"].includes(k)) ||
-      !safe(body.requestId) ||
-      typeof body.text !== "string" ||
-      !body.text.trim() ||
-      body.text.length > 500 ||
-      /[\p{Cc}\p{Cf}]/u.test(body.text)
-    )
-      fail("invalid");
+    if (path !== "/api/game/device/dialogue") fail("invalid");
+    const currentActions = binding.activeActions?.filter(
+      (action) =>
+        binding.actions?.includes(action) &&
+        profileActions(binding.minecraftTarget).includes(action),
+    );
+    const allowed = (id: string) =>
+      id === "none" ||
+      (bridgeChoiceIds[
+        binding.minecraftTarget?.connector ?? "minecraft-mineflayer"
+      ].includes(id) &&
+        currentActions?.includes(actionIds[id]));
+    if (body.operation !== undefined && !currentActions?.length)
+      fail("unauthorized");
+    if (body.operation === "action-check") {
+      if (Object.keys(body).length !== 1) fail("invalid");
+      return reply({ authorized: true, revision: binding.revision });
+    }
+    if (body.operation === "action-outcome") {
+      if (
+        Object.keys(body).some(
+          (k) => !["operation", "id", "action", "result"].includes(k),
+        ) ||
+        !safe(body.id) ||
+        body.action === "none" ||
+        !allowed(body.action) ||
+        !actionResults.has(body.result)
+      )
+        fail("invalid");
+    } else {
+      if (
+        Object.keys(body).some(
+          (k) =>
+            !(
+              body.operation === "decide"
+                ? ["operation", "requestId", "text", "choices"]
+                : ["requestId", "text"]
+            ).includes(k),
+        ) ||
+        !safe(body.requestId) ||
+        !safeText(body.text, 500)
+      )
+        fail("invalid");
+      if (body.operation === "decide") {
+        if (
+          !Array.isArray(body.choices) ||
+          body.choices.length < 2 ||
+          body.choices.length > 8 ||
+          body.choices[0]?.id !== "none" ||
+          new Set(body.choices.map((c) => c?.id)).size !==
+            body.choices.length ||
+          !body.choices.every(
+            (c) =>
+              c &&
+              Object.keys(c).length === 2 &&
+              allowed(c.id) &&
+              safeText(c.label, 160),
+          )
+        )
+          fail("invalid");
+      }
+    }
     const result = await execute(binding, body);
     broker.current(binding);
     return reply(result);

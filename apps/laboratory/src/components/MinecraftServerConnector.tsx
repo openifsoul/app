@@ -2,6 +2,7 @@ import { desktopBridge } from "../lib/desktop";
 import { useEffect, useState } from "react";
 import {
   minecraftConnectors,
+  minecraftActionAvailability,
   validMinecraftTarget,
   type MinecraftTarget,
 } from "../../../shared/src/minecraft-connectors";
@@ -49,6 +50,8 @@ export function MinecraftServerConnector({
   const [playerId, setPlayerId] = useState("");
   const [npcId, setNpcId] = useState("");
   const [approved, setApproved] = useState(false);
+  const [gameplay, setGameplay] = useState(false);
+  const availableActions = [...minecraftActionAvailability[connector]];
   const [grant, setGrant] = useState<GameGrant>();
   const [renewal, setRenewal] = useState<string>();
   const [error, setError] = useState("");
@@ -122,10 +125,14 @@ export function MinecraftServerConnector({
         provider: provider as GamePairRequest["provider"],
         model,
         minecraftTarget: target,
+        ...(gameplay && availableActions.length
+          ? { actions: [...availableActions] }
+          : {}),
         ...(renewal ? { connectionId: renewal } : {}),
       });
       setGrant(created);
       setRenewal(undefined);
+      setGameplay(false);
       setReload((value) => value + 1);
     } catch {
       setError(
@@ -163,7 +170,7 @@ export function MinecraftServerConnector({
         </p>
         <p className="text-sm text-muted-foreground">
           Ask the server operator to install the matching IfSoul bridge and its
-          required mod. Native compatibility is still being tested.
+          required mod.
         </p>
         {desktop && (
           <div className="grid justify-items-start gap-2">
@@ -296,6 +303,29 @@ export function MinecraftServerConnector({
           />
           I approve private dialogue for this player and NPC.
         </label>
+        {availableActions.length > 0 ? (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={gameplay}
+              onChange={(event) => setGameplay(event.target.checked)}
+            />
+            {connector === "minecraft-minecolonies"
+              ? "Allow recall to the selected citizen’s assigned work building."
+              : connector === "minecraft-citizens"
+                ? "Allow the selected NPC to follow the player or walk to their nearby position."
+                : "Allow the selected NPC to walk to the player's nearby position."}
+            {connector === "minecraft-citizens"
+              ? " Verified on a local Paper server."
+              : connector === "minecraft-easy-npc"
+                ? " Verified on local NeoForge with a configured travel objective. Requires an owned NPC with idle ground navigation at connection time."
+                : " Verified with a local NeoForge client."}
+          </label>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Gameplay is unavailable for this bridge.
+          </p>
+        )}
         <Button
           className="justify-self-start"
           disabled={
@@ -333,6 +363,7 @@ export function MinecraftServerConnector({
               <TableRow>
                 <TableHead>Character</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Gameplay</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -349,6 +380,19 @@ export function MinecraftServerConnector({
                           ? "Bridge handshake received"
                           : "Waiting for bridge handshake"}
                   </TableCell>
+                  <TableCell>
+                    {availableActions.length === 0 ||
+                    connection.revoked ||
+                    connection.expiresAt <= Date.now()
+                      ? "Unavailable"
+                      : !connection.actions?.length
+                        ? "Disabled by operator"
+                        : !connection.activeActions?.length
+                          ? "Waiting for a compatible bridge"
+                          : connector === "minecraft-minecolonies"
+                            ? "Workplace recall enabled at last connection"
+                            : "Movement enabled at last connection"}
+                  </TableCell>
                   <TableCell className="flex gap-2">
                     <Button
                       size="sm"
@@ -356,6 +400,7 @@ export function MinecraftServerConnector({
                       disabled={working}
                       onClick={() => {
                         setRenewal(connection.connectionId);
+                        setGameplay(false);
                         setPlayerId(connection.minecraftTarget!.playerId);
                         setNpcId(connection.minecraftTarget!.npcId);
                         setCharacter(connection.characterId);

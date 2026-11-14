@@ -1,9 +1,9 @@
 {
   "package": "@ifsoul/core",
-  "version": "0.6.0",
-  "archive": "release060-43b96b65b2f3/ifsoul-core-0.6.0.tgz",
-  "sha256": "43b96b65b2f340ea6ba6e4212e2368ad61dcbcab1fcad58f4ed4d1e79da2548c",
-  "baseCommit": "f35eea5313ed28d2af4acc25a90cafdab5fc44e9",
+  "version": "0.7.0",
+  "archive": "release070-2ce90f77118c/ifsoul-core-0.7.0.tgz",
+  "sha256": "2ce90f77118c55f99612b7f4325f4df8fe5a817c1e9bce8b69aa39a78528864c",
+  "baseCommit": "e535ebe673627b87bf1cfa4aee809f3f14dc993a",
   "sources": [
     {
       "path": ".editorconfig",
@@ -67,7 +67,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "61f7aee286bb6a457d4ab9abef767261d55c52e08f32e765f36561c4e043cf61"
+      "sha256": "77956b50d854ee68d2ec0fdb2d8a08b9f49b5b3fd862f8e4a526178e8ce54fd9"
     },
     {
       "path": "SECURITY.md",
@@ -95,7 +95,7 @@
     },
     {
       "path": "docs/compatibility.md",
-      "sha256": "0043934e249da27f9263416131df767d2120c515273595f357517752b971baf1"
+      "sha256": "fedb24b34b389ba3d65e8e0204a7f867081906db66a88aaa850903320585428a"
     },
     {
       "path": "docs/decisions/README.md",
@@ -143,7 +143,7 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "140ae4af21b8103667793226863c20f913600263403d9c3aaf31b13b2c2554a3"
+      "sha256": "b567da874edcb08f28a0c19c71ad7174746c43fc25ee157e5a160e20e79634a1"
     },
     {
       "path": "docs/runtime-api.md",
@@ -167,7 +167,7 @@
     },
     {
       "path": "docs/versioning.md",
-      "sha256": "919ebac2bdd3e6440df29682e21bbff6085591326aee1ff3e5fb79f47803f98b"
+      "sha256": "db4adb14eace37b451a32892a0d7173532de70c14257d3936d8e23ea32f490ea"
     },
     {
       "path": "docs/web-laboratory.md",
@@ -175,7 +175,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "603843a15c717888ef6af92c57b7e4b351790202c113fb90fad66ced9cb61902"
+      "sha256": "5751df59ec0a218e72eb96cc776ee4616759faa880be1ad6d9039e3245930c6e"
     },
     {
       "path": "packages/memory/README.md",
@@ -215,7 +215,7 @@
     },
     {
       "path": "packages/model-providers/src/ollama.ts",
-      "sha256": "b847ccfffd062f5fb6746219dc0df0a6240efd87442a131c17851fcc1abb5f99"
+      "sha256": "ab4ce12d9fb1e7c163c958ae1368a78289f00c1dab2ef67778fb368220be7a6d"
     },
     {
       "path": "packages/model-providers/src/openai.ts",
@@ -283,7 +283,7 @@
     },
     {
       "path": "packages/protocol/src/index.ts",
-      "sha256": "4a8ba0779ffdeac06f1276ae7b90921390d123a50ff3da1292dcdf01d722009e"
+      "sha256": "b9943142ad560005ecaf61d7a248b4954ff6cb41749b8882eb045fdfc4114bbf"
     },
     {
       "path": "packages/protocol/src/resource-policy.ts",
@@ -331,7 +331,7 @@
     },
     {
       "path": "release.json",
-      "sha256": "f65b8a5568b179224531311b17917f0578ba8d829314b11e91fb81f5f4726e63"
+      "sha256": "943f1ded9b6e3f5ff4fe0ee1fbdda5826abea8f5b54e4f286f60090f4662da75"
     },
     {
       "path": "scripts/boundary-analysis.mjs",
@@ -351,7 +351,7 @@
     },
     {
       "path": "scripts/check-version.mjs",
-      "sha256": "ade87d089a7181037f6c9e62e31324abd3879bc46e1c3b9e5beb66919b5bfcfe"
+      "sha256": "3f0e64749740bd30d35718c57c8d7a386765f43bcd734f9ed44f36d223a5d6df"
     },
     {
       "path": "scripts/copy-build-assets.mjs",
@@ -547,7 +547,7 @@
     },
     {
       "path": "tests/providers/providers.test.ts",
-      "sha256": "ca521314cdc5ed9ecf0e510b6840181e4f585457006eadb900c94a293ffb097b"
+      "sha256": "e5ed45529ffd063403e906bbb74ca1bca16e71050c1e7602739a7835872d2b30"
     },
     {
       "path": "tests/providers/resource-policy.test.ts",
@@ -579,7 +579,7 @@
     },
     {
       "path": "tests/runtime/versioning.test.ts",
-      "sha256": "224baed1264dff69ed09ee47ba8df6d16f62ce49a33cb5ccb426ffb776d564fe"
+      "sha256": "1efbb6bf964d1c233562f463ad30195464f0af36b9ae881f7e1138ec6f24d1cc"
     },
     {
       "path": "tests/tooling/boundaries.test.mjs",
@@ -587,7 +587,7 @@
     },
     {
       "path": "tests/tooling/core-package.test.mjs",
-      "sha256": "f6e327b147b42b62ad35c75c075fda01c062d0945401c4ba667d53aa81f02fe5"
+      "sha256": "27726ecf9e30861be516a29732b13a191c25f99be744195e625a97f2ae3b7b1f"
     },
     {
       "path": "tsconfig.build.json",

@@ -1,9 +1,9 @@
 {
   "package": "@ifsoul/adapter-sdk",
-  "version": "0.6.0",
-  "archive": "release060-2697f4c685f2/ifsoul-adapter-sdk-0.6.0.tgz",
-  "sha256": "2697f4c685f204c8888d06f4b5f7dc97775444f029222a3d491092712f1332cd",
-  "baseCommit": "544517fe2429824fd0f8c27495e0b8b966d8d7be",
+  "version": "0.7.0",
+  "archive": "release070-4ec77e9b0ae5/ifsoul-adapter-sdk-0.7.0.tgz",
+  "sha256": "4ec77e9b0ae5bb001d0232da0684a15722e40c9cd0fa8611562eac6fcbdb3c69",
+  "baseCommit": "7db013a2d99e05d6dd29ea5bd3182712543d69e1",
   "sources": [
     {
       "path": ".github/workflows/checks.yml",
@@ -23,7 +23,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "2e355cc009811acb70d4b930c00fd7a607873b996c08cbedbe22b3f25876cf03"
+      "sha256": "663a188b34f49d5e296466d2c54e28f2d808d88bcde19932dfb96b616fd42097"
     },
     {
       "path": "SECURITY.md",
@@ -43,7 +43,7 @@
     },
     {
       "path": "docs/compatibility.md",
-      "sha256": "0043934e249da27f9263416131df767d2120c515273595f357517752b971baf1"
+      "sha256": "fedb24b34b389ba3d65e8e0204a7f867081906db66a88aaa850903320585428a"
     },
     {
       "path": "docs/deployment.md",
@@ -55,7 +55,7 @@
     },
     {
       "path": "docs/mineflayer-bridge.md",
-      "sha256": "2f0623a05577b04f8b8cfc8b1e4961137e3b476a5c8f8447d3ed37e3ca8e4ab6"
+      "sha256": "4df37301f5444d0598f370d6bc36556fc4dcb92fecdc1bede148623a2212ec05"
     },
     {
       "path": "docs/resource-budgets.md",
@@ -67,7 +67,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "5683650c1f90b23e8fee81804ef77e84a87d73ffeddb12815db7109e9e0a330b"
+      "sha256": "476d2ded6017b76f329132c08a349d6d3d5bd6fe1eacecf7dba5013efb7f6d8e"
     },
     {
       "path": "pnpm-lock.yaml",
@@ -75,11 +75,11 @@
     },
     {
       "path": "release.json",
-      "sha256": "f65b8a5568b179224531311b17917f0578ba8d829314b11e91fb81f5f4726e63"
+      "sha256": "943f1ded9b6e3f5ff4fe0ee1fbdda5826abea8f5b54e4f286f60090f4662da75"
     },
     {
       "path": "scripts/check-version.mjs",
-      "sha256": "0a55040da1be48c23c6d582d1b5a16d64b42db13acbc2b9d29bdc6f5ecac67cb"
+      "sha256": "a7b6745184f990ff756f46ec9aee43958959f9900f812f17e29b7fb303b71d60"
     },
     {
       "path": "src/behavior.ts",
@@ -103,7 +103,7 @@
     },
     {
       "path": "src/port.ts",
-      "sha256": "f652ed9f88888388dd93b51ea619822beab92eef2dfe0ebff739d999094bac29"
+      "sha256": "dd334350658d4b1baa0130781ebf97a1081cf2c037cd83a29168399c79874d3d"
     },
     {
       "path": "src/resource-policy.ts",
@@ -127,11 +127,11 @@
     },
     {
       "path": "tests/tooling/sdk-package.test.mjs",
-      "sha256": "716bc24e4d63b3ce705c0134c0d22f60109c730a740e0ae6df09ef781edfe9b6"
+      "sha256": "3a091b5aa28c130cddd716140add8a6cdc6374155b9bec06f47e87a2260d732a"
     },
     {
       "path": "tests/versioning.test.ts",
-      "sha256": "4afc0ecbbd95d95b19e183f9d5c53ce95daa36b7ed8463e5c8b9b66777326cf0"
+      "sha256": "0e6c5db9a7986c48abe1ed5612bdc4eced167e634cda6b75cec5db560875f541"
     },
     {
       "path": "tsconfig.build.json",

@@ -480,6 +480,24 @@ test("server connector handshake is bound to the owner's exact compatibility tar
     character: { id: "profile", name: "Lumen", temperament: "Calm" },
     minecraftTarget: target,
   };
+  const easy = broker.create("easy-owner", {
+    ...resolved,
+    minecraftTarget: { ...target, connector: "minecraft-easy-npc" },
+    actions: ["movement"],
+  });
+  const { token: easyToken } = broker.redeem(easy.code);
+  const runtime = {
+    connector: "minecraft-easy-npc",
+    version: "1.21.1",
+    loader: "NeoForge",
+    upstream: "6.0.2",
+    npcId: target.npcId,
+  };
+  assert.deepEqual(broker.ready(easyToken, player, runtime).activeActions, []);
+  assert.deepEqual(
+    broker.ready(easyToken, player, runtime, ["movement"]).activeActions,
+    ["movement"],
+  );
   const send = (
     action: string,
     body: unknown,
@@ -558,5 +576,186 @@ test("server connector handshake is bound to the owner's exact compatibility tar
     );
   } finally {
     db.close();
+  }
+});
+
+test("action grants require explicit profile approval and current ready capabilities", async () => {
+  const f = fixture();
+  try {
+    const make = (actions?: ("movement" | "defense" | "colony")[]) =>
+      f.broker.create("owner", {
+        characterId: "profile",
+        memoryId: "memory",
+        provider: "openai",
+        model: "synthetic",
+        character: { id: "profile", name: "Lumen", temperament: "Calm" },
+        ...(actions ? { actions } : {}),
+      });
+    assert.throws(() => make(["colony"]));
+    const oldToken = f.broker.redeem(f.grant().code).token;
+    assert.equal(
+      f.broker.ready(oldToken, player, undefined, ["movement"]).activeActions,
+      undefined,
+    );
+    const grant = make(["movement", "defense"]);
+    const { token } = f.broker.redeem(grant.code);
+    let last: Record<string, unknown> | undefined;
+    const request = (credential: string, body: unknown) =>
+      gameDeviceRequest(
+        new Request("http://127.0.0.1/api/game/device/dialogue", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + credential,
+          },
+          body: JSON.stringify(body),
+        }),
+        f.broker,
+        async (_binding, input) => {
+          last = input;
+          return {
+            choiceId: "follow",
+            speech: "The host will check this action.",
+            source: "llm",
+          };
+        },
+      );
+    const check = { operation: "action-check" };
+    assert.equal((await request(oldToken, check)).status, 403);
+    assert.deepEqual(f.broker.ready(token, player).activeActions, []);
+    assert.throws(() => f.broker.ready(token, player, undefined, ["anything"]));
+    assert.equal((await request(token, check)).status, 403);
+    const started = f.broker.ready(token, player, undefined, ["movement"]);
+    assert.deepEqual(started.activeActions, ["movement"]);
+    assert.deepEqual(await (await request(token, check)).json(), {
+      authorized: true,
+      revision: started.revision,
+    });
+    const decide = {
+      operation: "decide",
+      requestId: "first",
+      text: "Follow me",
+      choices: [
+        { id: "none", label: "No action" },
+        { id: "follow", label: "Follow player" },
+      ],
+    };
+    assert.equal((await request(token, decide)).status, 200);
+    assert.deepEqual(last, decide);
+    assert.equal(
+      (
+        await request(token, {
+          ...decide,
+          choices: [...decide.choices, { id: "defend", label: "Defend" }],
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request(token, {
+          operation: "action-outcome",
+          id: "id",
+          action: "follow",
+          result: "arrived",
+        })
+      ).status,
+      200,
+    );
+    const replacement = f.broker.ready(token, player, undefined, [
+      "movement",
+      "defense",
+    ]);
+    assert.throws(() => f.broker.current(started));
+    assert.ok(replacement.revision > started.revision);
+    f.broker.revoke("owner", grant.connection.connectionId);
+    assert.equal((await request(token, check)).status, 403);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("structured device decisions never certify model speech as an action outcome", async () => {
+  const f = fixture();
+  const prompts: string[] = [];
+  const executor = createGameExecutor({
+    store: f.store,
+    validate: async (binding) => f.broker.current(binding),
+    clientFor: async () => ({
+      id: "openai",
+      generate: async ({ prompt }) => {
+        prompts.push(prompt);
+        return {
+          ok: true,
+          value: {
+            content: '{"choiceId":"east","speech":"I arrived already."}',
+          },
+        };
+      },
+    }),
+  });
+  try {
+    const approved = f.broker.create("owner", {
+      characterId: "profile",
+      memoryId: "memory",
+      provider: "openai",
+      model: "synthetic",
+      character: { id: "profile", name: "Lumen", temperament: "Calm" },
+      actions: ["movement"],
+    });
+    const { token } = f.broker.redeem(approved.code);
+    const send = async (body: unknown) => {
+      const result = await gameDeviceRequest(
+        new Request("http://127.0.0.1/api/game/device/dialogue", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + token,
+          },
+          body: JSON.stringify(body),
+        }),
+        f.broker,
+        executor.execute,
+      );
+      assert.equal(result.status, 200);
+      return result.json();
+    };
+    const binding = f.broker.ready(token, player, undefined, ["movement"]);
+    const decision = {
+      operation: "decide",
+      requestId: "move-1",
+      text: "Walk east",
+      choices: [
+        { id: "none", label: "No action" },
+        { id: "east", label: "Walk east" },
+      ],
+    };
+    const selected = await send(decision);
+    assert.equal(selected.choiceId, "east");
+    assert.doesNotMatch(selected.speech, /arrived/);
+    assert.equal((await send(decision)).choiceId, "none");
+    assert.equal(prompts.length, 1);
+    assert.equal(
+      executor.history(binding).some((entry) => entry.text.includes("arrived")),
+      false,
+    );
+    const outcome = {
+      operation: "action-outcome",
+      id: "outcome-1",
+      action: "east",
+      result: "arrived",
+    };
+    await send(outcome);
+    await send(outcome);
+    assert.equal(
+      executor
+        .history(binding)
+        .filter((entry) => entry.text.includes("ended east: arrived")).length,
+      1,
+    );
+    await send({ ...decision, requestId: "move-2" });
+    assert.match(prompts.at(-1)!, /Minecraft host ended east: arrived/);
+  } finally {
+    f.db.close();
   }
 });

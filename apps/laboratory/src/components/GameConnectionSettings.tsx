@@ -61,7 +61,9 @@ function phase(status: CompanionStatus) {
   return status.requiresServiceSwitch
     ? "Configured for another App"
     : status.connector?.ready
-      ? "Ready for private dialogue"
+      ? status.config?.connection.activeActions?.length
+        ? "Ready for dialogue and gameplay"
+        : "Ready for private dialogue"
       : (phaseLabels[status.phase] ??
         (status.running
           ? "Running — checking readiness"
@@ -89,6 +91,8 @@ export function GameConnectionSettings({
     ),
     [model, setModel] = useState(selectedModel),
     [consent, setConsent] = useState(false);
+  const [movement, setMovement] = useState(false),
+    [defense, setDefense] = useState(false);
   const [host, setHost] = useState("127.0.0.1"),
     [port, setPort] = useState("25565"),
     [botName, setBotName] = useState("IfSoulBot"),
@@ -290,6 +294,8 @@ export function GameConnectionSettings({
     setCharacterId("");
     setMemoryId("");
     setConsent(false);
+    setMovement(false);
+    setDefense(false);
     setTrusted(false);
     setHost("127.0.0.1");
     setPort("25565");
@@ -412,6 +418,9 @@ export function GameConnectionSettings({
           provider,
           model,
           consent: true,
+          ...(movement
+            ? { actions: defense ? ["movement", "defense"] : ["movement"] }
+            : {}),
           ...(reuseConnection
             ? { connectionId: saved.connection.connectionId }
             : {}),
@@ -466,6 +475,8 @@ export function GameConnectionSettings({
         setConfirmClear(false);
         hydrated.current = false;
         setConsent(false);
+        setMovement(false);
+        setDefense(false);
         setTrusted(false);
       }
       adoptStatus(await readCompanionStatus(access, current.signal));
@@ -918,9 +929,42 @@ export function GameConnectionSettings({
               disabled={localBusy}
             />
             I approve private dialogue with the selected player using this
-            character, memory and model. This does not grant game mechanics or
-            public chat access.
+            character, memory and model.
           </label>
+          <label className="flex min-h-11 items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1 size-5 shrink-0"
+              checked={movement}
+              onChange={(e) => {
+                setMovement(e.target.checked);
+                if (!e.target.checked) setDefense(false);
+              }}
+              disabled={localBusy}
+            />
+            Allow this player to ask the bot to follow or walk to a nearby
+            point.
+          </label>
+          {movement && (
+            <label className="flex min-h-11 items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 size-5 shrink-0"
+                checked={defense}
+                onChange={(e) => setDefense(e.target.checked)}
+                disabled={localBusy}
+              />
+              Allow defense against nearby hostile mobs.
+            </label>
+          )}
+          {companion?.config?.connection.actions?.length ? (
+            <p className="text-sm text-muted-foreground">
+              {companion.config.connection.activeActions?.length &&
+              companion.connector?.ready
+                ? `Enabled by the connected companion: ${companion.config.connection.activeActions.join(", ")}.`
+                : "Gameplay was approved. Start a companion that supports these actions to enable it."}
+            </p>
+          ) : null}
           {!serverValid && (
             <p className="text-sm text-muted-foreground">
               Check the server host, port and distinct Minecraft names before

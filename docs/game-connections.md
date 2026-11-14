@@ -21,8 +21,8 @@ In an already prepared bridge folder, only the last command is needed for later 
 2. Open **Games**, choose **Configure Minecraft** on the Minecraft card, then open the companion consent page. Enter the exact App origin you opened yourself and approve it locally. Copy the displayed single-use code into the App. It expires after five minutes. The App also obtains a single-use owner proof from its authenticated service. The companion verifies that this owner may inspect a saved binding before showing its profile, memory or player details, including when accounts share the same App origin. The App's control session lasts fifteen minutes and is kept only in the current page, not browser storage. If your browser asks for local-network access, approve only the App and companion you intend to connect.
 3. Enter the Minecraft host and port independently of the IfSoul App address. This connector uses Java Minecraft1.20.2 and the explicit trusted offline-server mode. Select only a server you own or are authorized to use and trust to report player identities. It does not change server authentication or sign in to a Microsoft account.
 4. Choose the bot name and the player to receive private replies. The player must be online. The companion reads the selected player's UUID from the connected server roster; you do not enter a UUID.
-5. Choose an owned character profile, memory, and an available provider/model. Approve **private dialogue**. Save the generated configuration and start. The status must become **Ready for private dialogue**.
-6. In Minecraft, send `/tell LumenBot hello`, replacing the bot name if you chose another. Public chat and other players' whispers are ignored. The connector supplies no movement, combat, pathfinding or game-command authority.
+5. Choose an owned character profile, memory, and an available provider/model. Approve **private dialogue**. Save the generated configuration and start. The status shows whether private dialogue or explicitly approved gameplay is ready.
+6. In Minecraft, send `/tell LumenBot hello`, replacing the bot name if you chose another. Public chat and other players' whispers are ignored. Gameplay is off by default. Enable movement to ask the bot to follow or walk to a nearby point. Enable defense separately to allow engagement with select nearby hostile mobs. Send `/tell LumenBot !ifsoul stop` or `/tell LumenBot !ifsoul wait` to cancel pending and active gameplay immediately.
 
 Provider availability belongs to the selected service. Ollama can run on a service that configures it; own-key providers keep keys in that service's encrypted store; managed inference uses that service's balance and budgets. Game setup carries no provider key and adds no second AI charge. A synthetic scenario is available for a connection check without model inference.
 
@@ -66,14 +66,19 @@ The companion binds literal loopback, checks Host, requires local Origin plus CS
 
 ```mermaid
 flowchart LR
-  Game[Approved Minecraft server roster] --> Companion[Local companion]
-  Companion --> Grant[Scoped native device request]
-  Grant --> Binding[Server-owned tenant/profile/memory/host mapping]
+  Player[Approved player] --> Bridge[Minecraft bridge]
+  Bridge --> Grant[Scoped device request]
+  Grant --> Binding[Server-owned identity and memory binding]
   Binding --> Runtime[Participant runtime and behavior policy]
-  Runtime --> Provider[Selected service provider and budgets]
-  Provider --> Fence[Recheck grant and configuration revision]
+  Runtime --> Provider[Selected model provider]
+  Provider --> Fence[App checks grant and configuration revisions]
+  Fence --> Decision{Structured decision}
+  Decision -->|Dialogue| Reply[Private client reply]
   Fence --> Memory[Durable private events]
-  Memory --> Reply[Private whisper only]
+  Decision -->|Gameplay choice| Check[Bridge checks grant and live target]
+  Check --> Execute[Bridge executes native action]
+  Execute --> Outcome[Bridge reports observed outcome]
+  Outcome --> Memory
 ```
 
 ## Operate a self-hosted service
@@ -90,12 +95,26 @@ Signing out ends the browser owner session. Use Revoke or Clear to end the separ
 
 ## Minecraft server-side bridges
 
-| Bridge | Pinned Minecraft/runtime | Local acceptance |
+| Bridge | Pinned Minecraft/runtime | Local dialogue acceptance |
 | --- | --- | --- |
 | Citizens 2.0.37 b3763 | Minecraft 1.21.4, Paper build 232, Java 21 | Native private dialogue |
 | Easy NPC 6.0.2 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Native private dialogue |
-| CustomNPCs Unofficial 1.21.1.20251230 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Builds and starts on the server; native dialogue pending |
-| MineColonies 1.1.1403 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Builds and starts on the server; native dialogue pending |
+| CustomNPCs Unofficial 1.21.1.20251230 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Private reply received by the local modded client and retained in App |
+| MineColonies 1.1.1403 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Private reply received by the local modded client and retained in App |
+
+The local gameplay grants allow Citizens to follow or walk to a
+nearby player, CustomNPCs to walk to a nearby player, and MineColonies to recall
+the selected citizen to its assigned work building. Citizens movement and stop
+passed a local Paper exercise. Easy NPC movement passed an independent local
+NeoForge exercise through the App with an owned NPC, a native travel objective
+and idle ground navigation at connection time. CustomNPCs passed local
+NeoForge client and App verification with the unmodified bridge, including
+movement, stop, revoke and re-pair. MineColonies passed local NeoForge client
+and App verification with the unmodified bridge for assigned workplace recall,
+cancellation before recall, revocation and re-pair.
+The App requires a fresh owner opt-in and a matching ready handshake from a
+compatible bridge with `game-actions` enabled. The list reports capability
+availability at the last handshake.
 
 Each server-side pairing grants private dialogue between one approved player
 and one NPC. Game mechanics and group scope remain with the game. Game setup
@@ -127,3 +146,18 @@ Desktop can install a reviewed local IfSoul bridge JAR through the connector's
 server's folder. Desktop verifies the pinned hash and places the JAR in the
 expected `plugins` or `mods` directory. Existing files stay in place. Install
 upstream mods and set the connector configuration with your server operator.
+
+### Choose actions for the bridge you installed
+
+| Bridge | Setup and supported player request | Local evidence |
+| --- | --- | --- |
+| Mineflayer | Enable movement in the App and join as the approved player. Whisper a request to follow or walk to a nearby point. Enable hostile-mob defense separately. | Real local Ollama request, observed movement and durable stop outcome. |
+| Citizens | Set `game-actions: true` in the bridge configuration. Select the paired NPC and ask privately to follow or come nearby. | App, Paper and the unmodified local plugin verified with a deterministic provider. |
+| Easy NPC | Enable `game-actions` for the paired NPC. The approved player must own it. Configure a native travel objective, such as Follow Owner, and adjust it for your setup so ground navigation is idle at connection time. Ask it to come nearby. | App and local NeoForge movement verified with a deterministic provider. |
+| CustomNPCs Unofficial | Enable `game-actions` and select the paired NPC. Ask it to come nearby. | Local NeoForge client, App and unmodified bridge verified with a deterministic provider. |
+| MineColonies | Enable `game-actions` for the selected citizen. Use a loaded citizen with an assigned, loaded workplace nearby. The approved player needs permission to interact with citizens and manage huts. Ask to recall the citizen to work. | Local NeoForge client, App and unmodified bridge verified with a deterministic provider. |
+
+The device activates only the actions both approved in the App and reported
+available by the bridge. The App lists actions reported at the last connection.
+Check a newly configured NPC by reconnecting the bridge. Selection and command
+details are in each bridge's setup guide. These results apply to local builds.

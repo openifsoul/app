@@ -14,22 +14,22 @@ const profiles = Object.freeze({
   "minecraft-citizens": [
     "plugins",
     "IfSoulCitizens.jar",
-    "cc4423a1381202c126d6ddab15b2ef52e4e3c318cbe545245e05d7e03f38c2b8",
+    "7fe0510c7f8d211fe33d3764cf016fe22c79f1fc717b8873d0d82c90154203b4",
   ],
   "minecraft-easy-npc": [
     "mods",
     "ifsoul-easy-npc.jar",
-    "918843482b5462cbd3686aa09d902a8cd95ae28abe202e64218eabe74b41159b",
+    "7eb8dd7845f2315bf1cc59bed8b263ff74e6f574a56c115a20914f31f444cb10",
   ],
   "minecraft-minecolonies": [
     "mods",
     "ifsoul-minecolonies.jar",
-    "1d7b22d692ad2bc2d19ff7fd203c50e220880ee4a5167a80ccf0ae897d03880f",
+    "a0cf837c961bc8c31cf04ff7b591c1dd9e0217c5aa6415f23afadfd328608ae0",
   ],
   "minecraft-customnpcs": [
     "mods",
     "ifsoul-customnpcs.jar",
-    "fe12ca6ae8b871c5f094bd9721d37d35cb72f9030bd7971f3953fb50ee450478",
+    "e60055308d06b5199b56b2be7fa09ee699be5b60ba8f461071a33f866d432429",
   ],
 });
 

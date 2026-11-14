@@ -1,3 +1,12 @@
+export type GameAction = "movement" | "defense" | "colony";
+export const minecraftActionAvailability = {
+  "minecraft-mineflayer": ["movement", "defense"],
+  "minecraft-citizens": ["movement"],
+  "minecraft-easy-npc": ["movement"],
+  "minecraft-minecolonies": ["colony"],
+  "minecraft-customnpcs": ["movement"],
+} as const satisfies Record<string, readonly GameAction[]>;
+
 export const minecraftConnectors = {
   "minecraft-mineflayer": {
     label: "Mineflayer",
