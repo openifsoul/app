@@ -567,11 +567,11 @@ export function GameConnectionSettings({
                 className="min-h-11 justify-self-start"
               >
                 <a
-                  href="https://github.com/openifsoul/bridge-minecraft"
+                  href="https://github.com/openifsoul/bridge-minecraft-mineflayer"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Get Minecraft bridge source
+                  Get Mineflayer bridge source
                   <ArrowUpRight />
                 </a>
               </Button>
@@ -583,7 +583,7 @@ export function GameConnectionSettings({
               <pre className="overflow-x-auto rounded-lg border p-3 text-xs">
                 <code>
                   {
-                    "git clone https://github.com/openifsoul/bridge-minecraft.git\ncd bridge-minecraft\npnpm install --frozen-lockfile\npnpm companion"
+                    "git clone https://github.com/openifsoul/bridge-minecraft-mineflayer.git\ncd bridge-minecraft-mineflayer\npnpm install --frozen-lockfile\npnpm companion"
                   }
                 </code>
               </pre>

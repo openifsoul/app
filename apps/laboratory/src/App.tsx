@@ -213,26 +213,31 @@ function WorkspaceApp() {
     const characterId = selectedCharacter.current;
     const memoryCharacterId = selectedMemory.current;
     const next = await api<LabStatus>("status", { signal });
-    const nextSnapshot = next.authenticated
-      ? (next.snapshot ??
-        (await api<LabSnapshot>(
-          `snapshot?characterId=${encodeURIComponent(characterId)}&memoryCharacterId=${encodeURIComponent(memoryCharacterId)}`,
-          { signal },
-        )))
-      : null;
-    const catalog = next.authenticated
-      ? await api<CharacterSummary[]>("characters", { signal })
-      : [];
+    const [history, catalog] = await Promise.allSettled([
+      next.authenticated
+        ? (next.snapshot ??
+          api<LabSnapshot>(
+            `snapshot?characterId=${encodeURIComponent(characterId)}&memoryCharacterId=${encodeURIComponent(memoryCharacterId)}`,
+            { signal },
+          ))
+        : null,
+      next.authenticated
+        ? api<CharacterSummary[]>("characters", { signal })
+        : [],
+    ]);
     if (
       signal?.aborted ||
       selectedCharacter.current !== characterId ||
       selectedMemory.current !== memoryCharacterId
     )
       return;
-    setCharacters(catalog);
+    if (catalog.status === "fulfilled") setCharacters(catalog.value);
     setStatus(next);
-    setSnapshot(nextSnapshot);
-    setError(null);
+    if (history.status === "fulfilled") setSnapshot(history.value);
+    const problem = history.status === "rejected" ? history : catalog;
+    setError(
+      problem.status === "rejected" ? friendlyError(problem.reason) : null,
+    );
   }, []);
 
   useEffect(() => {
@@ -276,7 +281,11 @@ function WorkspaceApp() {
     ? model
     : (selectedProvider?.models[0]?.id ?? "");
   const ready = Boolean(
-    selectedProvider?.available && selectedModel && !pending && !characterBusy,
+    snapshot &&
+    selectedProvider?.available &&
+    selectedModel &&
+    !pending &&
+    !characterBusy,
   );
 
   async function run(operation: "plan" | "chat") {
@@ -477,11 +486,6 @@ function WorkspaceApp() {
             </div>
           </header>
           <div className="app-page">
-            {error && (
-              <div className="feedback error" role="alert">
-                {error}
-              </div>
-            )}
             {loading && !status ? (
               <div className="connection-state" role="status">
                 <LoaderCircle className="animate-spin" />
@@ -499,6 +503,14 @@ function WorkspaceApp() {
               </div>
             ) : (
               <>
+                {error && (
+                  <div className="feedback error" role="alert">
+                    <p>{error}</p>
+                    <Button variant="outline" onClick={() => void reload()}>
+                      Try again
+                    </Button>
+                  </div>
+                )}
                 {!selectedProvider?.available && section !== "settings" && (
                   <div className="feedback notice" role="status">
                     <p>

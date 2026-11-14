@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
-import { api, friendlyError } from "../lib/api";
+import { api, ApiError, friendlyError } from "../lib/api";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import type {
@@ -30,7 +30,7 @@ export function MemoryArchiveControls({
   const archive = useRef<unknown>(null);
   const file = useRef<HTMLInputElement>(null);
   const inFlight = useRef(false);
-  async function perform(action: () => Promise<void>) {
+  async function perform(action: () => Promise<void>, operation?: "export") {
     if (inFlight.current) return;
     inFlight.current = true;
     setPending(true);
@@ -40,7 +40,13 @@ export function MemoryArchiveControls({
     try {
       await action();
     } catch (reason) {
-      setError(friendlyError(reason));
+      setError(
+        operation === "export" &&
+          reason instanceof ApiError &&
+          reason.code === "unsupported"
+          ? "No export-permitted history is available for this memory."
+          : friendlyError(reason),
+      );
     } finally {
       inFlight.current = false;
       setPending(false);
@@ -96,7 +102,7 @@ export function MemoryArchiveControls({
                   setNotice(
                     `Downloaded ${value.payload.events.length} retained records. Excluded: ${value.payload.omitted.forbidden} restricted, ${value.payload.omitted.derived} interpretations, ${value.payload.omitted.unsupported} unsupported records.`,
                   );
-                })
+                }, "export")
               }
             >
               <Download size={14} /> Download memory

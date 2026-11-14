@@ -113,7 +113,7 @@ export function friendlyError(error: unknown): string {
   const code = error instanceof ApiError ? error.code : "unavailable";
   const messages: Record<string, string> = {
     unsupported:
-      "No export-permitted history is available. Start a new exportable memory, or choose a supported archive.",
+      "This runtime could not read the requested data. Try again or contact the runtime operator.",
     busy: "Wait for the current operation to finish, then try again.",
     "no-session":
       "This character is unavailable. Refresh the workspace and choose again.",

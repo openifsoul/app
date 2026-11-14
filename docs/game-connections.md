@@ -7,8 +7,8 @@ The App configures an installed Minecraft companion through a consent-protected 
 Install Node22.18–24 and pnpm10.15.0, then run these four commands in a terminal:
 
 ```sh
-git clone https://github.com/openifsoul/bridge-minecraft.git
-cd bridge-minecraft
+git clone https://github.com/openifsoul/bridge-minecraft-mineflayer.git
+cd bridge-minecraft-mineflayer
 pnpm install --frozen-lockfile
 pnpm companion
 ```

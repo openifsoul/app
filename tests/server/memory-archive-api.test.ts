@@ -44,6 +44,32 @@ test("memory APIs enforce owner authentication/origin, explicit new-session cons
           body: JSON.stringify(body),
         }),
       );
+    const get = async (path: string) =>
+      (
+        await api(
+          new Request(`http://127.0.0.1:8793/api/${path}`, {
+            headers: { host: "127.0.0.1:8793" },
+          }),
+        )
+      ).json();
+    assert.ok((await get("status")).authenticated);
+    const localChat = await service.run({
+      characterId: IDS.character,
+      operation: "chat",
+      requestId: "private-chat",
+      message: "Synthetic private conversation",
+      provider: "scenario",
+      model: "scenario",
+    });
+    assert.ok(localChat.ok);
+    const snapshot = await get("snapshot");
+    assert.ok(snapshot.ok);
+    const originalHistory = snapshot.value.memories;
+    assert.ok(originalHistory.length > 0);
+    const denied = await get(`memory/export?memoryId=${IDS.character}`);
+    assert.equal(denied.ok, false);
+    assert.equal(denied.error.code, "unsupported");
+    assert.deepEqual((await get("snapshot")).value.memories, originalHistory);
     assert.equal(
       (
         await post(
