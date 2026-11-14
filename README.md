@@ -113,3 +113,9 @@ reaction policy and evidence-linked state.
 See [memory location, providers and spending](docs/billing-memory.md) for service placement, the optional customer billing capability and final-price estimates.
 
 See [Connect Minecraft through the App](docs/game-connections.md) for local companion setup, service pairing, private dialogue and connection controls.
+
+See [IfSoul Desktop](docs/desktop.md) for building and launching the packaged App.
+The [App releases page](https://github.com/openifsoul/app/releases) is the
+distribution point for unsigned test builds for macOS on Apple silicon and
+Windows x64. Windows native execution is untested. Windows test builds use manual updates. The macOS updater offers only newer
+compatible releases verified by its embedded key.

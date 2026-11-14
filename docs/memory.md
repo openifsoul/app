@@ -1,6 +1,6 @@
 # Bounded memory architecture
 
-App owns evidence ingestion, extractive episodes, recall and revisable
+App owns evidence ingestion, bounded recall and revisable
 interpretations. Core supplies scoped transactional storage and runtime/provider
 ports; SDK supplies bounded transport and observation callbacks. Hosts own
 mechanics, identity mapping, outcomes and presentation. Managed hosting verifies
@@ -13,12 +13,11 @@ protected local owner store.
 flowchart TD
   Host["Game host + SDK reports / App chat"] --> Auth["Trusted composition: authenticate and select owner store"]
   Auth --> Raw["App validates and persists attributed raw evidence"]
-  Raw --> Episodes["App bounded extractive episodes + explicit losses"]
+  Raw --> Inspection["Authorized indexed Memory inspection"]
   Raw --> Recall["Scoped, bounded recall"]
-  Episodes --> Recall
   Recall --> Model["Requested LLM dialogue + optional memory proposals"]
   Model --> Validate["App source / subject / quotation / confidence validation"]
-  Validate --> CAS["Recheck evidence fingerprint + prior state; atomic replacement"]
+  Validate --> CAS["Recheck evidence fingerprint + prior state; append revised interpretation"]
   CAS --> Claims["World-scoped reported claims: unverified"]
   CAS --> Relations["Portable character-to-player relationship + revision history"]
   Claims --> Recall
@@ -28,11 +27,10 @@ flowchart TD
   Model --> Dialogue["Validated dialogue / bounded choice"]
   Dialogue --> Present["App chat / host-owned game presentation and adoption"]
   Raw --- Storage["Core MemoryPort + SQLite; no game semantics"]
-  Episodes --- Storage
   CAS --- Storage
 ```
 
-An observation-only request stops after persistence/retention and calls no model.
+An observation-only request stops after persistence and calls no model.
 A requested dialogue may propose interpretations in that same call; a rejected
 proposal preserves prior interpretations without implying dialogue failure.
 The host must validate current legality before adopting any choice. Neither
@@ -48,8 +46,8 @@ that owner, not a universal multiplayer or cross-account identity service.
 Roles remain world-specific; portable relationships preserve every cited world's
 context. Changing provider does not replace the stored character history.
 
-Reset removes this selected owner's retained bridge evidence and derived state
-atomically. It leaves profiles, other memory environments, credentials and usage
+Reset fences this selected owner's bridge evidence and derived state before
+removing the matching records in bounded transactions. It leaves profiles, other memory environments, credentials and usage
 records intact. Profile-only import/export still transfers authored material, not lived
 memory. Separate App memory archives transfer only explicitly export-permitted
 selected history into a new fork; existing forbidden records stay excluded. Local and managed databases are separate, unsynchronized stores.
@@ -87,41 +85,16 @@ Server observations establish received host-labelled requests, not completed
 play. Generated dialogue is stored as attributed speech, never game facts or
 execution authority. No host permissions or mechanics change.
 
-Continuity keeps at most 100 detailed interactions and 60 deterministic,
-extractive request episodes, rather than stopping after a lifetime write count.
-At the local write boundary, up to 20 oldest interactions become episodes in one
-atomic storage transaction. Every ingested report and its actor/observer/recipient
-roles survives extraction; context is shortened to 160 characters, and generated
-speech is excluded. Historical agent IDs/names are captured at report time, even
-if another profile later portrays the selected memory. Missing actors stay unknown.
-An episode retains source ID, original recorded time and SHA-256 digest of the
-original entry, plus explicit losses. Its summary is a retained source excerpt,
-not an inferred fact. Derived views can be discarded/rebuilt from those excerpts;
-the expired complete raw entry cannot be reconstructed or independently verified
-from its digest. No LLM call, embeddings or vector service is used for consolidation.
+Accepted bridge requests and dialogue retain their original evidence and receipts.
+Model requests select up to 20 recall entries within 12,000 serialized bytes.
+The provider request applies its configured input budget after recall. Context
+packing can omit or shorten evidence without modifying stored originals.
+Historical episodes remain readable with their original provenance and losses.
 
-Retention preserves the most substantive retained episode of each of up to 12
-worlds (explicit reported outcomes before attributed actions, then excerpt
-richness; oldest on ties), then the newest remaining episodes. Older episodes expire; inspection reports
-pruned-source and dropped-episode counts. This is bounded memory, not a complete
-archive or unlimited factual recall. Active serialized events stay below 900,000
-bytes; recall selects at most 20 records and 12,000 serialized entry bytes, with
-world representatives before relevance/recency. The final structured provider
-request is packed below 21,000 bytes. The character catalog remains capped at 50.
-Input/dialogue receipts expire with raw evidence: request conflict/idempotence is
-guaranteed while a raw receipt or episode request digest remains; retained episode
-source IDs prevent raw resurrection. Once an episode also expires, its old request ID may be accepted
-again. Report deduplication covers retained raw and episode excerpts only.
-
-Reset physically deletes this owner's retained bridge raw events, episodes,
-checkpoints and matching bridge receipts in one transaction. It does not delete
-other memory environments, profiles, provider credentials or paid-usage records;
-no backup/third-party deletion propagation is claimed. Existing append-only reset
-markers remain respected during local retention; their hidden prefix is pruned
-rather than resurfaced. This requires an optional trusted-owner `MemoryPort.compact`
-implementation; older adapters fail explicitly when retention is needed. Original
-sources remain intact if consolidation fails. The local single writer performs
-selection and synchronous compaction without an asynchronous gap. Local App accepts bounded conversation/decision requests at
+Explicit owner forget writes a content-free generation fence and clears matching
+bridge events and receipts in bounded transactions. Source access restrictions
+change eligible reads and model delivery without deleting stored sources.
+Local App accepts bounded conversation/decision requests at
 `POST /api/bridge?provider=ollama&model=<configured-model>` (or an available
 `openai` model). It uses the same local Host/Origin protection and owner store as
 the App; configure provider credentials in App Settings, never in the SDK. This
@@ -162,7 +135,7 @@ the shared 900,000-byte bridge storage limit. These are bounded interpretations,
 not a complete graph or archive. Derived citations may outlive the full raw
 source; their retained excerpts cannot independently establish world truth.
 
-The source fingerprint and prior state are rechecked before atomic replacement.
+The source fingerprint and prior state are rechecked before appending a reflection snapshot.
 Concurrent stale results are discarded. Each historical perspective attempts
 reflection once per retained evidence fingerprint, including failed, declined
 and context-deferred attempts; no automatic additional paid call or retry occurs. A crash before
@@ -302,3 +275,51 @@ authentication and API busy protections remain in force. The local HTTP adapter
 accepts preview/import request envelopes up to 2,010,000 bytes, including the
 2,000,000-byte archive and wrapper; unrelated request limits remain unchanged. Managed hosting must
 still authenticate and partition its owner store before using the public App API.
+
+## Browse saved records
+
+Open a memory from **Memories** to inspect its retained records. Search matches
+saved text using full-text phrase matching over the SQLite retained-event index.
+Combine it with exact world,
+session, entity and record-kind IDs, UTC date bounds, or a minimum model
+confidence. Use the source links on a record to find related retained evidence.
+Source excerpts and digests can remain when the original event has expired.
+The model sees a bounded selection based on relevance, recency and source
+importance. That selection is built for each request from the current eligible
+records and can be smaller than the saved history.
+
+`GET /api/memory/browse` requires a `memoryId` in the authenticated owner store.
+Optional filters are `q`, `world`, `session`, `entity`, `kind`, `since`, `until`,
+`confidence` and `source`. Continue with the returned `next` cursor using the
+same filters. Records use storage insertion order, with one row per retained
+interpretation version or attributed browser report. A response contains up to
+20 rows. Counts and world/kind facets include only matching authorized projected records at the search anchor. Older
+records with missing host or entity metadata retain unknown classification.
+Owner browsing and source navigation share the same scope checks.
+
+Native private game dialogue uses its existing connection-scoped history and
+participant authorization. Its provider requests use a byte-bounded projection
+of authorized dialogue with source event IDs. A declared Ollama context with an
+input estimate also constrains packing by the estimated input plus the configured
+output reservation. A request can reuse older eligible
+wording when relevant. Stored dialogue stays in the participant store.
+
+In local App, use the **History** selector on a memory to inspect an exact
+active native connection. The connected player can privately whisper
+`!ifsoul allow-history` to the configured Minecraft companion to allow
+owner inspection, and `!ifsoul deny-history` to withdraw it. Inspection
+requires the grant, the active connection, the same memory and verified
+player binding, and current participant history visibility. Re-pairing
+requires a new grant. Native connection text search uses its own SQLite phrase index. Native history rows with no saved timestamp show an
+unknown date.
+
+The local service accepts authenticated
+`DELETE /api/memory/source-access?memoryId=…&worldId=…` to restrict historical
+source projection for a world. Add `sourceId` to restrict a particular
+source. This changes retrieval and delivery authorization without rewriting
+the stored source documents.
+
+When recalling reports across languages, the bridge asks the model to write the
+explanation in the user's language and quote the original names, objects and
+location phrases. Conflicting reports retain separate attributions and
+citations. Prompt packing leaves the retained source records intact.

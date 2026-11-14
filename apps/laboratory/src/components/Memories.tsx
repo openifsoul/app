@@ -7,6 +7,7 @@ import type {
 } from "../../../runtime-host/src/service-types";
 import { friendlyError } from "../lib/api";
 import { EvidencePanel } from "./Workspace";
+import { MemoryExplorer } from "./MemoryExplorer";
 import { MemoryArchiveControls } from "./MemoryArchive";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -105,7 +106,6 @@ export function Memories({
         className="space-y-4"
       >
         <div className="characters-table-toolbar">
-          <h2 className="text-sm font-medium">Your memories</h2>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -248,6 +248,9 @@ export function Memories({
             </SelectContent>
           </Select>
         </div>
+        {view === "detail" && memoryId && (
+          <MemoryExplorer key={memoryId} memoryId={memoryId} />
+        )}
         <EvidencePanel
           snapshot={snapshot}
           disabled={disabled}

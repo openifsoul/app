@@ -1,6 +1,6 @@
 {
   "name": "@ifsoul/app",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": false,
   "type": "module",
   "description": "Self-hostable IfSoul App and reusable local/cloud UI",
@@ -18,9 +18,11 @@
     "lab": "tsx apps/runtime-host/src/cli.ts",
     "build:server": "tsc -p tsconfig.server.json",
     "build": "pnpm build:server && pnpm build:web",
-    "check:version": "node scripts/check-version.mjs"
+    "check:version": "node scripts/check-version.mjs",
+    "build:desktop": "pnpm build && node apps/desktop/tools/package.mjs"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "@tailwindcss/vite": "4.3.4",
     "@types/node": "22.20.5",
     "@types/react": "19.3.0",
@@ -40,7 +42,8 @@
     "dist/server",
     "LICENSES",
     "docs",
-    "release.json"
+    "release.json",
+    "!apps/desktop"
   ],
   "sideEffects": [
     "**/*.css"
@@ -72,8 +75,8 @@
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "5.3.0",
     "@gsap/react": "2.1.2",
-    "@ifsoul/adapter-sdk": "file:vendor/release050-cc2c16233fb6/ifsoul-adapter-sdk-0.5.0.tgz",
-    "@ifsoul/core": "file:vendor/release050-bb111cf4645b/ifsoul-core-0.5.0.tgz",
+    "@ifsoul/adapter-sdk": "file:vendor/release060-2697f4c685f2/ifsoul-adapter-sdk-0.6.0.tgz",
+    "@ifsoul/core": "file:vendor/release060-43b96b65b2f3/ifsoul-core-0.6.0.tgz",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "class-variance-authority": "0.7.1",

@@ -18,6 +18,7 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
+import { SidebarDesktopAction } from "./SidebarDesktopAction";
 import { BrandMark } from "./BrandMark";
 import {
   Sidebar,
@@ -110,7 +111,7 @@ export function AppSidebar({
     }
   }
   return (
-    <Sidebar collapsible="icon" variant="inset" aria-label="App navigation">
+    <Sidebar collapsible="icon" variant="sidebar" aria-label="App navigation">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -196,6 +197,7 @@ export function AppSidebar({
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarDesktopAction />
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Help on Telegram">
               <a

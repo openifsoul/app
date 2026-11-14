@@ -1,3 +1,4 @@
+import { bridgeForgetGeneration } from "../../runtime-host/src/bridge-memory.js";
 import { AppResourceError } from "./resource-policy.js";
 import {
   resolveBridgeLimits,
@@ -62,6 +63,7 @@ import { createRuntime, type TrustedSession } from "@ifsoul/core/runtime";
 import {
   createModelController,
   fitModelPrompt,
+  type ModelInputBudget,
   modelReplyLanguagePolicy,
 } from "../../runtime-host/src/service.js";
 import {
@@ -70,6 +72,7 @@ import {
   recallBridgeMemory,
   projectBridgeRecallForModel,
   latestBridgeUserMessage,
+  type BridgeSourceAccess,
 } from "../../runtime-host/src/bridge-memory.js";
 
 export interface BridgeExecutionPolicy {
@@ -81,6 +84,9 @@ export interface BridgeExecutionPolicy {
   generationTimeoutCeilingMs?: number;
   promptBudgetBytes?: number;
   promptBudgetCeilingBytes?: number;
+  fitsModelInput?: ModelInputBudget;
+  sourceAccess?: BridgeSourceAccess;
+  validateSourceAccess?: () => void;
   compactOutput?: boolean;
   bridgeLimits?: Partial<BridgeLimits>;
   runtimeLimits?: Partial<RuntimeLimits>;
@@ -397,7 +403,12 @@ function prepareBridgeRequest(
   recordBridgeRequest(memory, memoryId, request, {
     historyEntries: options.retainedHistoryEntries,
   });
-  const continuation = recallBridgeMemory(memory, memoryId, request.context);
+  const continuation = recallBridgeMemory(
+    memory,
+    memoryId,
+    request.context,
+    options.sourceAccess,
+  );
   return {
     fail,
     timestamp,
@@ -462,6 +473,14 @@ export async function runBridgeRequest(
     Math.max(30_000, generationTimeoutMs + 5_000),
     options,
   );
+  const memoryId = request.memoryId ?? request.character.id;
+  const forgetGeneration = bridgeForgetGeneration(memory, memoryId);
+  const validateDelivery = () => {
+    options.behavior?.validate();
+    options.validateSourceAccess?.();
+    if (bridgeForgetGeneration(memory, memoryId) !== forgetGeneration)
+      throw fail();
+  };
   const latestUserMessage =
     options.behavior && request.operation !== "chat"
       ? ""
@@ -471,6 +490,7 @@ export async function runBridgeRequest(
             memory,
             request.memoryId ?? request.character.id,
             request.character.id,
+            options.sourceAccess,
           );
   // The provider wrapper supplies retained continuation; omit its duplicate raw history
   // before the controller's first packing pass as well as the final wire packing pass.
@@ -491,7 +511,7 @@ export async function runBridgeRequest(
         },
         signal,
       );
-      options.behavior?.validate();
+      validateDelivery();
       return output;
     };
   try {
@@ -508,7 +528,8 @@ export async function runBridgeRequest(
         createModelController({
           client: {
             id: client.id,
-            generate(input) {
+            async generate(input) {
+              validateDelivery();
               // The provider receives this exact schema through its structured-output port.
               // Avoid embedding a second escaped copy in the demo user prompt.
               const prompt = JSON.parse(input.prompt) as Record<
@@ -553,41 +574,47 @@ export async function runBridgeRequest(
               // The controller already supplies provenance and actor policies. Replace
               // its default language rule rather than duplicating both policies on
               // every bridge request (including context-constrained local models).
-              const system = `${input.system.replace(modelReplyLanguagePolicy(), "")} Recall across listed hosts when asked; follow the structured-output schema.${hostSpeechPolicy} ${replyLanguage}`;
-              return client.generate({
+              const system = `${input.system.replace(modelReplyLanguagePolicy(), "")} Recall across listed hosts when asked. When citing reports, keep conflicting claims separate and attach each report ref in brackets (e.g. [r1]) to its own claim. For cross-language recall, use the reply language for the explanation. Copy source names, distinctive object phrases and exact location phrases verbatim in quotation marks. Never guess a translation for a cited phrase. For example, in Russian: Раннее сообщение указывало «at the north station» [example A], а поздняя поправка — «beside the green fountain» [example B]. This shows the format only; cite actual report refs, and use the exact wording from those reports.${hostSpeechPolicy} ${replyLanguage}`;
+              const packedPrompt = fitModelPrompt(
+                {
+                  ...prompt,
+                  ...(options.behavior
+                    ? {}
+                    : {
+                        continuation: projectBridgeRecallForModel(
+                          continuation,
+                          request.operation === "decide"
+                            ? ""
+                            : latestUserMessage,
+                        ),
+                      }),
+                },
+                system,
+                input.schema,
+                promptBudgetBytes,
+                options.promptBudgetCeilingBytes,
+                options.fitsModelInput,
+              );
+              const result = await client.generate({
                 ...input,
                 system,
-                prompt: fitModelPrompt(
-                  {
-                    ...prompt,
-                    ...(options.behavior
-                      ? {}
-                      : {
-                          continuation: projectBridgeRecallForModel(
-                            continuation,
-                            request.operation === "decide"
-                              ? ""
-                              : latestUserMessage,
-                          ),
-                        }),
-                  },
-                  system,
-                  input.schema,
-                  promptBudgetBytes,
-                  options.promptBudgetCeilingBytes,
-                ),
+                prompt: packedPrompt,
               });
+              validateDelivery();
+              return result;
             },
           },
           model,
           promptBudgetBytes,
           promptBudgetCeilingBytes: options.promptBudgetCeilingBytes,
+          fitsModelInput: options.fitsModelInput,
           compactOutput: options.compactOutput,
           ...(options.behavior
             ? {}
             : {
                 reflection: {
                   memory,
+                  sourceAccess: options.sourceAccess,
                   memoryId: request.memoryId ?? request.character.id,
                   perspectiveCharacterId: request.character.id,
                   sourceBudgetBytes: options.reflectionSourceBytes,
@@ -608,6 +635,7 @@ export async function runBridgeRequest(
     if (!runtime.setSession(session).ok) throw fail();
     if (request.operation === "decide") {
       const result = await runtime.plan();
+      validateDelivery();
       if (!result.ok || result.value.tasks.length !== 1) throw fail();
       const task = result.value.tasks[0];
       if (!request.choices.some((c) => c.id === task.intentId)) throw fail();
@@ -647,7 +675,10 @@ export async function runBridgeRequest(
               },
             ],
     });
+    validateDelivery();
     if (!result.ok || result.value.output.type !== "utterance") throw fail();
+    const maxSpeechChars = resolveBridgeLimits(options.bridgeLimits).effective
+      .maxSpeechChars;
     recordBridgeSpeech(
       memory,
       request.memoryId ?? request.character.id,
@@ -656,10 +687,7 @@ export async function runBridgeRequest(
     );
     return {
       choiceId: request.fallbackChoiceId,
-      speech: result.value.output.content.slice(
-        0,
-        resolveBridgeLimits(options.bridgeLimits).effective.maxSpeechChars,
-      ),
+      speech: result.value.output.content.slice(0, maxSpeechChars),
       source: "llm",
     };
   } catch {

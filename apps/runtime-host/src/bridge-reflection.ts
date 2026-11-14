@@ -6,6 +6,7 @@ import {
   storedBridgeEvents,
   bridgeMemoryEvent,
   type BridgeMemoryEntry,
+  type BridgeSourceAccess,
 } from "./bridge-memory.js";
 
 export interface ReflectionSource {
@@ -221,9 +222,6 @@ export function inspectReflectionMemory(
   return structuredClone(state(memory, owner));
 }
 function save(memory: MemoryPort, owner: string, next: ReflectionState) {
-  const old = storedBridgeEvents(memory, owner).filter(
-    (e) => e.eventType === "bridge-reflection",
-  );
   const id = `reflection-${crypto.randomUUID()}`;
   if (Buffer.byteLength(JSON.stringify(next)) > 96000)
     throw Error("memory-capacity: reflection budget reached");
@@ -234,25 +232,7 @@ function save(memory: MemoryPort, owner: string, next: ReflectionState) {
     "bridge-reflection",
     { state: next },
   );
-  const bytes =
-    storedBridgeEvents(memory, owner)
-      .filter((e) => e.eventType !== "bridge-reflection")
-      .reduce((n, e) => n + Buffer.byteLength(JSON.stringify(e)), 0) +
-    Buffer.byteLength(JSON.stringify(replacement));
-  if (bytes > 900000) throw Error("memory-capacity: reflection budget reached");
-  if (old.length) {
-    if (!memory.compact) throw Error("memory-retention-unsupported");
-    const saved = memory.compact({
-      characterId: owner,
-      environmentId: "browser-continuation",
-      scope: old[0]!.scope,
-      eventIds: old.map((e) => e.memoryId),
-      exchangeIds: [],
-      events: [replacement],
-      exchanges: [],
-    });
-    if (!saved.ok) throw Error("Memory reflection unavailable");
-  } else if (!memory.commit({ events: [replacement], exchanges: [] }).ok)
+  if (!memory.commit({ events: [replacement], exchanges: [] }).ok)
     throw Error("Memory reflection unavailable");
 }
 const updateProperties = {
@@ -307,7 +287,11 @@ export function prepareBridgeReflection(
   owner: string,
   perspective: string,
   compactOutput = false,
-  sourceBudget: { maxBytes?: number; maxSources?: number } = {},
+  sourceBudget: {
+    maxBytes?: number;
+    maxSources?: number;
+    access?: BridgeSourceAccess;
+  } = {},
 ) {
   const maxSourceBytes = sourceBudget.maxBytes ?? 6000;
   const maxSources = sourceBudget.maxSources ?? 24;
@@ -321,9 +305,12 @@ export function prepareBridgeReflection(
   )
     throw new RangeError("Invalid reflection source policy");
   perspective = historicalCharacter(memory, owner, perspective);
-  const allSources = catalog(memory, owner).filter(
-    (s) => s.perspectiveCharacterId === perspective && s.subjectIds.length > 0,
-  );
+  const eligibleSource = (s: ReflectionSource) =>
+    s.perspectiveCharacterId === perspective &&
+    s.subjectIds.length > 0 &&
+    (!sourceBudget.access ||
+      (!!s.hostId && sourceBudget.access(s.hostId, s.id)));
+  const allSources = catalog(memory, owner).filter(eligibleSource);
   const fingerprint = digest(allSources.map((s) => [s.id, s.digest]));
   const current = state(memory, owner);
   const lock = `${owner}:${perspective}`;
@@ -467,7 +454,20 @@ export function prepareBridgeReflection(
         }),
       ),
       previous: [...current.facts, ...current.relationships]
-        .filter((i) => i.perspectiveCharacterId === perspective)
+        .filter(
+          (i) =>
+            i.perspectiveCharacterId === perspective &&
+            (!sourceBudget.access ||
+              (i.sources.length > 0 &&
+                [
+                  ...i.sources,
+                  ...i.history.flatMap((revision) => revision.sources),
+                ].every(
+                  (source) =>
+                    !!source.hostId &&
+                    sourceBudget.access!(source.hostId, source.id),
+                ))),
+        )
         .slice(-6)
         .map(
           ({
@@ -504,11 +504,7 @@ export function prepareBridgeReflection(
       if (
         digest(
           catalog(memory, owner)
-            .filter(
-              (s) =>
-                s.perspectiveCharacterId === perspective &&
-                s.subjectIds.length > 0,
-            )
+            .filter(eligibleSource)
             .map((s) => [s.id, s.digest]),
         ) !== fingerprint
       )

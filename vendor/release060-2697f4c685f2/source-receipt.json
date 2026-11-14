@@ -1,0 +1,145 @@
+{
+  "package": "@ifsoul/adapter-sdk",
+  "version": "0.6.0",
+  "archive": "release060-2697f4c685f2/ifsoul-adapter-sdk-0.6.0.tgz",
+  "sha256": "2697f4c685f204c8888d06f4b5f7dc97775444f029222a3d491092712f1332cd",
+  "baseCommit": "544517fe2429824fd0f8c27495e0b8b966d8d7be",
+  "sources": [
+    {
+      "path": ".github/workflows/checks.yml",
+      "sha256": "75f13e045c90617629611028821132cd50579d7f8ee2eace827da7e23afb012d"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "019aa704fc68aac67a01898ca00d9cccb5582f5d3a1761fb0131c86da25d5a08"
+    },
+    {
+      "path": ".npmrc",
+      "sha256": "2114d436e923579b7bd7472ccc3b72c42e9ce21ff20aff663315e7d5a9060e40"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "README.md",
+      "sha256": "2e355cc009811acb70d4b930c00fd7a607873b996c08cbedbe22b3f25876cf03"
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "bd0eb00377510820ad0893a9e33cc2447f1a301d55546b3cfb12c81a3c979ff5"
+    },
+    {
+      "path": "apps/test-host/README.md",
+      "sha256": "3dd08e1a95e8158815dd8a689aac5bc6be254c360d1e4e4659bd98ec7700e8c2"
+    },
+    {
+      "path": "apps/test-host/src/index.ts",
+      "sha256": "841e1d9903208dc3ec7d114d9cff524b33d7efffbfb289030f9702bb4ef38995"
+    },
+    {
+      "path": "docs/behavior.md",
+      "sha256": "9fbb2f2735e2be307a12924cc087ecf9bc696da42e810109f2517f9e5a9408e2"
+    },
+    {
+      "path": "docs/compatibility.md",
+      "sha256": "0043934e249da27f9263416131df767d2120c515273595f357517752b971baf1"
+    },
+    {
+      "path": "docs/deployment.md",
+      "sha256": "840b9bc8900f23db1d7a557aaa172f81ddd40f00b0c11c46c642242b662c327b"
+    },
+    {
+      "path": "docs/group-scheduler.md",
+      "sha256": "5bdd74f52173968ac998f768f9163058f37fd19b179bac89c70a92fb2dc664f9"
+    },
+    {
+      "path": "docs/mineflayer-bridge.md",
+      "sha256": "2f0623a05577b04f8b8cfc8b1e4961137e3b476a5c8f8447d3ed37e3ca8e4ab6"
+    },
+    {
+      "path": "docs/resource-budgets.md",
+      "sha256": "0c81e3b46fc36afec3d1aa1b141668e8fa895ad60d457f507b280246a10742bd"
+    },
+    {
+      "path": "docs/sessions.md",
+      "sha256": "ed9fa7f3622fe7a08f12777ef7a86d8fe12c8b9c60527ab62d690cb08ec7fe2d"
+    },
+    {
+      "path": "package.json",
+      "sha256": "5683650c1f90b23e8fee81804ef77e84a87d73ffeddb12815db7109e9e0a330b"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "2e0a724a7c02651db98fcce1ea61369a2cc26d8e7e8a1244a10f8724c1c6d21c"
+    },
+    {
+      "path": "release.json",
+      "sha256": "f65b8a5568b179224531311b17917f0578ba8d829314b11e91fb81f5f4726e63"
+    },
+    {
+      "path": "scripts/check-version.mjs",
+      "sha256": "0a55040da1be48c23c6d582d1b5a16d64b42db13acbc2b9d29bdc6f5ecac67cb"
+    },
+    {
+      "path": "src/behavior.ts",
+      "sha256": "560ae78c5ec4ce4b813294206e6bead9296420af96b5970c65efd59392f7a62e"
+    },
+    {
+      "path": "src/bridge.ts",
+      "sha256": "0cbeac6250bccb5f3fd270e3197344d94f419c08cfdf147cd386d7ff15f15385"
+    },
+    {
+      "path": "src/game-host.ts",
+      "sha256": "712b5962a257e800d74f12412c66a0fcef03d1eec6c6dd82d0adcfbfb256ddbb"
+    },
+    {
+      "path": "src/host-port.ts",
+      "sha256": "5c30cfe39cdb926a7c33bfea39826c93da7408f383036b2c8ddd12439ce8da65"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "20419f3e39480790a4287e091e1a9c44f7faa55aeede31d011e96aa4549928a0"
+    },
+    {
+      "path": "src/port.ts",
+      "sha256": "f652ed9f88888388dd93b51ea619822beab92eef2dfe0ebff739d999094bac29"
+    },
+    {
+      "path": "src/resource-policy.ts",
+      "sha256": "c79ec1054490c53bef3b9fd792807fe1586508e42ce7e1762666891e40bb1b55"
+    },
+    {
+      "path": "src/scheduler.ts",
+      "sha256": "cc816651405eb590ca48483850c72d001d15579a3fc3dc79c04908d73dc32590"
+    },
+    {
+      "path": "src/session.ts",
+      "sha256": "873486a281c8df4e45ff0b7c33eef47facd1328799e4462c04c8f86c5d37b706"
+    },
+    {
+      "path": "tests/resource-policy.test.ts",
+      "sha256": "19ae56aed1f2bab9934bc0340e672ce415b0600385433d50d0c72cb1c1b041e9"
+    },
+    {
+      "path": "tests/sdk.test.ts",
+      "sha256": "82594f093198d75b7a0e2bb960f31424c8b294ba5582ba619c85c3057393dbfc"
+    },
+    {
+      "path": "tests/tooling/sdk-package.test.mjs",
+      "sha256": "716bc24e4d63b3ce705c0134c0d22f60109c730a740e0ae6df09ef781edfe9b6"
+    },
+    {
+      "path": "tests/versioning.test.ts",
+      "sha256": "4afc0ecbbd95d95b19e183f9d5c53ce95daa36b7ed8463e5c8b9b66777326cf0"
+    },
+    {
+      "path": "tsconfig.build.json",
+      "sha256": "6d9ff813dd79f83f94a0112d44315d8bdef7bb8188653a316fa1216db5765f31"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "99dcaa5f14b4b6f28ae8c1172c64761171cfa601a8594e8ed6b4bb8c4a8a62db"
+    }
+  ]
+}

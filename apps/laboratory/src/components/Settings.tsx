@@ -1,3 +1,4 @@
+import { desktopBridge } from "../lib/desktop";
 import { useState } from "react";
 import {
   ArrowUpRight,
@@ -120,7 +121,8 @@ export function Settings({
     }
   }
 
-  function navigate() {
+  async function navigate() {
+    setLocationError(null);
     try {
       const url = new URL(
         location === "local"
@@ -143,7 +145,13 @@ export function Settings({
       )
         throw new Error();
       if (location !== "local" && url.protocol !== "https:") throw new Error();
-      window.location.assign(`${url.origin}/app`);
+      const desktop = desktopBridge();
+      if (desktop) {
+        if (location === "local") return;
+        await desktop.openService(url.origin);
+      } else {
+        window.location.assign(`${url.origin}/app`);
+      }
     } catch {
       setLocationError(
         location === "local"
@@ -159,11 +167,8 @@ export function Settings({
         <CardHeader>
           <CardTitle>
             <Settings2 size={17} />
-            Workspace settings
+            Runtime and model
           </CardTitle>
-          <p className="card-subtitle">
-            Choose where it runs. Then how it thinks.
-          </p>
         </CardHeader>
         <CardContent>
           <section className="settings-section">
@@ -334,7 +339,8 @@ export function Settings({
                   <Monitor size={14} />
                   {status.mode === "cloud"
                     ? "Ollama needs a local runtime on your computer. Open it above to use local models."
-                    : "Models are served by Ollama on this computer. The runtime stays separate from the model."}
+                    : (selected?.reason ??
+                      "Models are served by Ollama on this computer. The runtime stays separate from the model.")}
                 </>
               ) : provider === "openai" ? (
                 <>

@@ -466,6 +466,7 @@ function WorkspaceApp() {
               <Button
                 variant="ghost"
                 size="icon"
+                className="touch-target"
                 onClick={() => void reload()}
                 disabled={loading || Boolean(pending)}
                 aria-label="Refresh workspace"

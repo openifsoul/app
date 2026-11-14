@@ -61,33 +61,41 @@ function Field({
   label,
   children,
   hint,
+  error,
 }: {
   label: string;
   children: React.ReactNode;
   hint?: string;
+  error?: string;
 }) {
   const controlId = useId();
   return (
-    <div className="grid min-w-0 gap-2 text-sm">
+    <div className="app-form-field grid min-w-0 gap-2 text-sm">
       <Label htmlFor={controlId}>{label}</Label>
       {isValidElement(children)
         ? cloneElement(
             children as React.ReactElement<{
               id?: string;
               "aria-describedby"?: string;
+              "aria-invalid"?: boolean;
             }>,
             {
               id: controlId,
-              ...(hint ? { "aria-describedby": `${controlId}-hint` } : {}),
+              ...(error || hint
+                ? { "aria-describedby": `${controlId}-feedback` }
+                : {}),
+              ...(error ? { "aria-invalid": true } : {}),
             },
           )
         : children}
-      {hint && (
+      {(error || hint) && (
         <span
-          id={`${controlId}-hint`}
-          className="text-xs text-muted-foreground"
+          id={`${controlId}-feedback`}
+          className={
+            error ? "text-xs text-destructive" : "text-xs text-muted-foreground"
+          }
         >
-          {hint}
+          {error || hint}
         </span>
       )}
     </div>
@@ -100,6 +108,7 @@ function Numeric({
   disabled,
   min,
   max,
+  error,
 }: {
   label: string;
   value: number;
@@ -107,9 +116,10 @@ function Numeric({
   disabled?: boolean;
   min?: number;
   max?: number;
+  error?: string;
 }) {
   return (
-    <Field label={label}>
+    <Field label={label} error={error}>
       <Input
         className="min-h-11"
         type="number"
@@ -341,6 +351,40 @@ function Policy({
     </div>
   );
 }
+function parameterNumberErrors(p: ParameterDefinition) {
+  const min = !Number.isFinite(p.min) ? "Enter a minimum." : undefined;
+  const max = !Number.isFinite(p.max)
+    ? "Enter a maximum."
+    : !min && p.max <= p.min
+      ? "Enter a maximum greater than the minimum."
+      : undefined;
+  const rangeIsValid = !min && !max;
+  return {
+    min,
+    max,
+    initial: !Number.isFinite(p.initial)
+      ? "Enter an initial value."
+      : rangeIsValid && (p.initial < p.min || p.initial > p.max)
+        ? "Enter an initial value within the range."
+        : undefined,
+    maxDelta:
+      !Number.isFinite(p.maxDelta) || p.maxDelta <= 0
+        ? "Enter a maximum change greater than zero."
+        : rangeIsValid && p.maxDelta > p.max - p.min
+          ? "Enter a maximum change no larger than the range."
+          : undefined,
+    perHour:
+      p.decay && (!Number.isFinite(p.decay.perHour) || p.decay.perHour <= 0)
+        ? "Enter a change per hour greater than zero."
+        : undefined,
+    toward:
+      p.decay &&
+      (!Number.isFinite(p.decay.toward) ||
+        (rangeIsValid && (p.decay.toward < p.min || p.decay.toward > p.max)))
+        ? "Enter a decay target within the range."
+        : undefined,
+  };
+}
 function validDraft(config: BehaviorConfiguration): string | null {
   const seen = new Set<string>();
   for (const p of config.parameters) {
@@ -351,24 +395,8 @@ function validDraft(config: BehaviorConfiguration): string | null {
     )
       return "Give every parameter a unique ID and label.";
     seen.add(p.parameterId);
-    if (
-      ![p.initial, p.min, p.max, p.maxDelta].every(Number.isFinite) ||
-      p.min >= p.max ||
-      p.initial < p.min ||
-      p.initial > p.max ||
-      p.maxDelta <= 0 ||
-      p.maxDelta > p.max - p.min
-    )
-      return `Check the initial value, range and maximum change for ${p.label}.`;
-    if (
-      p.decay &&
-      (!Number.isFinite(p.decay.perHour) ||
-        p.decay.perHour <= 0 ||
-        !Number.isFinite(p.decay.toward) ||
-        p.decay.toward < p.min ||
-        p.decay.toward > p.max)
-    )
-      return `Check the decay rate and target for ${p.label}.`;
+    const fieldError = Object.values(parameterNumberErrors(p)).find(Boolean);
+    if (fieldError) return `${p.label}. ${fieldError}`;
     if (p.kind === "trait" && (p.scope !== "portable" || p.decay))
       return "Stable traits must be portable and cannot decay.";
   }
@@ -828,7 +856,7 @@ export function BehaviorSettings({
                       <TableCell>
                         <Button
                           variant="link"
-                          className="character-row-name"
+                          className="character-row-name touch-target"
                           onClick={(event) => {
                             event.stopPropagation();
                             setEditingParameter(index);
@@ -873,6 +901,7 @@ export function BehaviorSettings({
               )}
               {draft.parameters.map((p, index) => {
                 if (index !== editingParameter) return null;
+                const numberErrors = parameterNumberErrors(p);
                 const disabled =
                   !editable ||
                   locked.lockedParameterIds.includes(p.parameterId);
@@ -966,24 +995,28 @@ export function BehaviorSettings({
                         </OptionSelect>
                       </Field>
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="app-field-row grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                       <Numeric
                         label="Initial value"
+                        error={numberErrors.initial}
                         value={p.initial}
                         onChange={(initial) => set({ initial })}
                       />
                       <Numeric
                         label="Minimum"
+                        error={numberErrors.min}
                         value={p.min}
                         onChange={(min) => set({ min })}
                       />
                       <Numeric
                         label="Maximum"
+                        error={numberErrors.max}
                         value={p.max}
                         onChange={(max) => set({ max })}
                       />
                       <Numeric
                         label="Maximum change"
+                        error={numberErrors.maxDelta}
                         value={p.maxDelta}
                         onChange={(maxDelta) => set({ maxDelta })}
                       />
@@ -1007,6 +1040,7 @@ export function BehaviorSettings({
                       <div className="grid gap-4 sm:grid-cols-2">
                         <Numeric
                           label="Change per hour"
+                          error={numberErrors.perHour}
                           value={p.decay.perHour}
                           onChange={(perHour) =>
                             set({ decay: { ...p.decay!, perHour } })
@@ -1014,6 +1048,7 @@ export function BehaviorSettings({
                         />
                         <Numeric
                           label="Decay toward"
+                          error={numberErrors.toward}
                           value={p.decay.toward}
                           onChange={(toward) =>
                             set({ decay: { ...p.decay!, toward } })

@@ -127,8 +127,8 @@ function Estimate({ snapshot }: { snapshot: BillingSnapshot }) {
         </p>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
+          <div className="app-field-row grid gap-4 sm:grid-cols-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="billing-estimate-model">Model</Label>
               <OptionSelect
                 id="billing-estimate-model"
@@ -146,7 +146,7 @@ function Estimate({ snapshot }: { snapshot: BillingSnapshot }) {
                 )}
               </OptionSelect>
             </div>
-            <div className="grid gap-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="billing-estimate-calls">Calls *</Label>
               <Input
                 id="billing-estimate-calls"
@@ -158,7 +158,7 @@ function Estimate({ snapshot }: { snapshot: BillingSnapshot }) {
                 onChange={(e) => edit(() => setCalls(e.target.value))}
               />
             </div>
-            <div className="grid gap-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="billing-estimate-input">
                 Total input tokens *
               </Label>
@@ -172,7 +172,7 @@ function Estimate({ snapshot }: { snapshot: BillingSnapshot }) {
                 onChange={(e) => edit(() => setInput(e.target.value))}
               />
             </div>
-            <div className="grid gap-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="billing-estimate-output">
                 Total output tokens *
               </Label>
@@ -423,8 +423,8 @@ export function BillingSettings() {
                 Limits include reserved work. Pausing blocks new managed
                 inference; existing reservations keep their reported state.
               </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
+              <div className="app-field-row grid gap-4 sm:grid-cols-2">
+                <div className="app-form-field grid gap-2">
                   <Label htmlFor="billing-daily-limit">
                     Daily limit (USD) *
                   </Label>
@@ -443,7 +443,7 @@ export function BillingSettings() {
                     aria-describedby="billing-limit-note"
                   />
                 </div>
-                <div className="grid gap-2">
+                <div className="app-form-field grid gap-2">
                   <Label htmlFor="billing-session-limit">
                     Session limit (USD) *
                   </Label>
@@ -582,8 +582,8 @@ export function BillingSettings() {
               <h3 id="billing-expenses-title" className="font-medium">
                 Expenses and reservations
               </h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="grid gap-2">
+              <div className="app-field-row grid gap-3 sm:grid-cols-2">
+                <div className="app-form-field grid gap-2">
                   <Label htmlFor="billing-expense-search">
                     Find category, NPC, game or model
                   </Label>
@@ -597,7 +597,7 @@ export function BillingSettings() {
                     }}
                   />
                 </div>
-                <div className="grid gap-2">
+                <div className="app-form-field grid gap-2">
                   <Label htmlFor="billing-expense-state">State</Label>
                   <OptionSelect
                     id="billing-expense-state"

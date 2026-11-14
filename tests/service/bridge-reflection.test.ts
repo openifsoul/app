@@ -266,7 +266,7 @@ test("role claims remain world-specific and duplicate citations do not inflate r
     memory.close();
   }
 });
-test("retained citations survive compaction while a legacy reset hides old interpretations", () => {
+test("retained citations survive original admission while a legacy reset hides old interpretations", () => {
   const memory = setup();
   try {
     observeBridgeRequest(request("The player chose tank."), memory);
@@ -278,7 +278,7 @@ test("retained citations survive compaction while a legacy reset hides old inter
         memory,
       );
     const snapshot = inspectBridgeMemory(memory, "owner");
-    assert.ok(snapshot.episodes.length > 0);
+    assert.ok(snapshot.entries.length > 100);
     assert.equal(
       snapshot.reflection.facts[0]!.sources[0]!.excerpt,
       "The player chose tank.",

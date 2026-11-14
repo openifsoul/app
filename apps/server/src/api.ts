@@ -75,6 +75,16 @@ export interface APIOptions {
   behavior?: AppBehaviorAPI;
   billing?: BillingPort;
   gameConnections?: GameConnectionPort;
+  browseGameMemory?: (
+    params: URLSearchParams,
+  ) => ReturnType<
+    typeof import("../../runtime-host/src/memory-explorer.js").browseScopedHistory
+  >;
+  revokeMemorySource?: (
+    memoryId: string,
+    worldId: string,
+    sourceId?: string,
+  ) => void;
 }
 const error = (code: string, message: string, status = 400) =>
   Response.json({ ok: false, error: { code, message } }, { status });
@@ -549,6 +559,40 @@ export function createAPI(options: APIOptions) {
       }
     }
     if ("listCharacters" in options.service) {
+      if (
+        path === "/api/memory/source-access" &&
+        request.method === "DELETE" &&
+        options.revokeMemorySource
+      ) {
+        const memoryId = url.searchParams.get("memoryId") ?? "";
+        const worldId = url.searchParams.get("worldId") ?? "";
+        const sourceId = url.searchParams.get("sourceId") ?? undefined;
+        try {
+          options.revokeMemorySource(memoryId, worldId, sourceId);
+          return Response.json({ ok: true });
+        } catch {
+          return error(
+            "invalid-document",
+            "This memory source could not be restricted.",
+          );
+        }
+      }
+      if (path === "/api/memory/browse" && request.method === "GET") {
+        if (!options.service.browseMemory)
+          return error(
+            "unsupported",
+            "This store does not support browsing retained memory.",
+          );
+        const result = url.searchParams.has("connection")
+          ? options.browseGameMemory?.(url.searchParams)
+          : options.service.browseMemory(url.searchParams);
+        if (!result)
+          return error(
+            "unsupported",
+            "This store does not support connection history.",
+          );
+        return Response.json(result, { status: result.ok ? 200 : 400 });
+      }
       if (path === "/api/memory/export" && request.method === "GET") {
         const result = options.service.exportMemory(
           url.searchParams.get("memoryId") ?? "",

@@ -4,8 +4,13 @@ import { memoryExportAllowed } from "./memory-archive.js";
 import { prepareBridgeReflection } from "./bridge-reflection.js";
 import {
   activeBridgeEvents,
+  visibleBridgeEntries,
+  type BridgeMemoryEntry,
+  bridgeForgetGeneration,
+  type BridgeSourceAccess,
   inspectBridgeMemory,
   recallBridgeMemory,
+  memoryRelevance,
   projectBridgeRecallForModel,
 } from "./bridge-memory.js";
 import { canonical, validateDocument } from "@ifsoul/core/protocol";
@@ -35,6 +40,7 @@ import type {
 } from "@ifsoul/core/runtime";
 import type {
   ModelClient,
+  GenerationInput,
   ProviderSelection,
 } from "@ifsoul/core/model-providers";
 import {
@@ -279,6 +285,7 @@ interface HistoryControllerInput extends ControllerInput {
 function modelEvidence(
   memories: MemoryEvent[],
   importedIds: ReadonlySet<string>,
+  question: string,
 ) {
   const speakers = new Map<unknown, unknown>();
   for (const event of memories) {
@@ -370,6 +377,13 @@ function modelEvidence(
         },
       });
   }
+  const ranked = candidates
+    .map((candidate) => ({
+      candidate,
+      score: memoryRelevance(question, JSON.stringify(candidate.record)),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .map(({ candidate }) => candidate);
   const evidence: Record<
     "hostReports" | "importedReports" | "plansAndDecisions" | "conversation",
     Record<string, unknown>[]
@@ -394,7 +408,7 @@ function modelEvidence(
     "plansAndDecisions",
     "conversation",
   ] as const)
-    for (const candidate of candidates) {
+    for (const candidate of ranked) {
       if (candidate.group !== group || evidence[group].length >= caps[group])
         continue;
       const size = new TextEncoder().encode(
@@ -418,6 +432,10 @@ class PromptPackingBudgetError extends ProviderControllerError {
   }
 }
 
+export type ModelInputBudget = (
+  input: Pick<GenerationInput, "system" | "prompt" | "schema">,
+) => boolean;
+
 /** Fit the full structured Cloudflare request, including JSON escaping and schema. */
 export function fitModelPrompt(
   value: Record<string, unknown>,
@@ -425,6 +443,7 @@ export function fitModelPrompt(
   schema: Record<string, unknown>,
   promptBudgetBytes = 21_000,
   promptBudgetCeilingBytes?: number,
+  fitsModelInput?: ModelInputBudget,
 ): string {
   if (
     !Number.isInteger(promptBudgetBytes) ||
@@ -449,11 +468,15 @@ export function fitModelPrompt(
         response_format: { type: "json_schema", json_schema: schema },
       }),
     );
+  const overBudget = () =>
+    size() > promptBudgetBytes ||
+    (fitsModelInput !== undefined &&
+      !fitsModelInput({ system, prompt: JSON.stringify(value), schema }));
   // The structured-output port already carries this exact schema.
-  if (size() > promptBudgetBytes) delete value.requiredContentSchema;
+  if (overBudget()) delete value.requiredContentSchema;
   const continuation = obj(value.continuation);
   const evidence = obj(value.historicalEvidence);
-  if (size() > promptBudgetBytes && value.continuation) {
+  if (overBudget() && value.continuation) {
     // This is only the model view. Source records and owner inspection retain
     // full provenance; the trusted system already defines these same rules.
     continuation.provenance =
@@ -499,7 +522,7 @@ export function fitModelPrompt(
     );
   };
   let fittingSteps = 0;
-  while (size() > promptBudgetBytes) {
+  while (overBudget()) {
     if (++fittingSteps > 128) throw new PromptPackingBudgetError();
     const entries = continuation.entries;
     const representatives = Array.isArray(continuation.visitedHosts)
@@ -709,9 +732,11 @@ export function createModelController(options: {
   now?: () => Date;
   promptBudgetBytes?: number;
   promptBudgetCeilingBytes?: number;
+  fitsModelInput?: ModelInputBudget;
   compactOutput?: boolean;
   reflection?: {
     memory: MemoryPort;
+    sourceAccess?: BridgeSourceAccess;
     memoryId?: string;
     perspectiveCharacterId?: string;
     sourceBudgetBytes?: number;
@@ -730,6 +755,7 @@ export function createModelController(options: {
           {
             maxBytes: options.reflection.sourceBudgetBytes,
             maxSources: options.reflection.maxSources,
+            access: options.reflection.sourceAccess,
           },
         )
       : undefined;
@@ -845,6 +871,10 @@ export function createModelController(options: {
                   : {},
               ),
             ),
+          input.operation === "conversation"
+            ? ((input.request as ConversationRequest).messages.at(-1)
+                ?.content ?? "")
+            : "",
         ),
         requiredContentSchema: schema,
         ...(input.operation === "conversation"
@@ -863,6 +893,7 @@ export function createModelController(options: {
           schema,
           options.promptBudgetBytes,
           options.promptBudgetCeilingBytes,
+          options.fitsModelInput,
         );
       } catch (error) {
         if (!reflection || !(error instanceof PromptPackingBudgetError))
@@ -881,6 +912,7 @@ export function createModelController(options: {
           schema,
           options.promptBudgetBytes,
           options.promptBudgetCeilingBytes,
+          options.fitsModelInput,
         );
       }
       const generate = () =>
@@ -911,6 +943,7 @@ export function createModelController(options: {
           schema,
           options.promptBudgetBytes,
           options.promptBudgetCeilingBytes,
+          options.fitsModelInput,
         );
         result = await generate();
       }
@@ -1193,22 +1226,59 @@ export function createLabService(options: LabServiceOptions): LabService {
         maxBytes: 1_000_000,
       });
       if (!history.ok) return history;
+      const bridgeEvents = activeBridgeEvents(
+        memory,
+        characterDocument.characterId,
+      );
+      const sourceAccess = options.bridgeSourcePolicy?.(
+        characterDocument.characterId,
+      );
+      const visibleSources = new Set(
+        sourceAccess
+          ? visibleBridgeEntries(
+              bridgeEvents
+                .filter((event) => event.eventType === "bridge-evidence")
+                .map(
+                  (event) =>
+                    event.recordedPayload.entry as unknown as BridgeMemoryEntry,
+                ),
+              sourceAccess.allows,
+            ).map((entry) => entry.id)
+          : [],
+      );
       history.value.push(
-        ...activeBridgeEvents(memory, characterDocument.characterId),
+        ...bridgeEvents.filter(
+          (event) => !sourceAccess || visibleSources.has(event.memoryId),
+        ),
       );
       const runs = history.value
         .filter((e) => e.eventType === "laboratory-run")
         .map((e) => e.recordedPayload.run as LabRun);
+      const reflection = inspectBridgeMemory(
+        memory,
+        characterDocument.characterId,
+      ).reflection;
+      const visibleReflection = (item: (typeof reflection.facts)[number]) =>
+        !sourceAccess ||
+        (item.sources.length > 0 &&
+          [
+            ...item.sources,
+            ...item.history.flatMap((revision) => revision.sources),
+          ].every(
+            (source) =>
+              !!source.hostId && sourceAccess.allows(source.hostId, source.id),
+          ));
       return success({
         character: structuredClone(characterDocument),
         ...(options.persona
           ? { persona: structuredClone(options.persona) }
           : {}),
         memories: history.value,
-        bridgeReflection: inspectBridgeMemory(
-          memory,
-          characterDocument.characterId,
-        ).reflection,
+        bridgeReflection: {
+          ...reflection,
+          facts: reflection.facts.filter(visibleReflection),
+          relationships: reflection.relationships.filter(visibleReflection),
+        },
         runs,
       });
     } catch {
@@ -1337,10 +1407,18 @@ export function createLabService(options: LabServiceOptions): LabService {
             },
             controller: async (controllerInput, signal) => {
               try {
+                const forgetGeneration = bridgeForgetGeneration(
+                  memory,
+                  characterDocument.characterId,
+                );
+                const access = options.bridgeSourcePolicy?.(
+                  characterDocument.characterId,
+                );
                 const recalledContinuation = recallBridgeMemory(
                   memory,
                   characterDocument.characterId,
                   request.message ?? "",
+                  access?.allows,
                 );
                 const continuation = recalledContinuation.entries.length
                   ? JSON.stringify(recalledContinuation)
@@ -1372,7 +1450,8 @@ export function createLabService(options: LabServiceOptions): LabService {
                   },
                 };
                 controllerInput = historyInput;
-                return await selectedController(
+                access?.validate();
+                const output = await selectedController(
                   options.persona
                     ? {
                         ...controllerInput,
@@ -1389,6 +1468,18 @@ export function createLabService(options: LabServiceOptions): LabService {
                     : controllerInput,
                   signal,
                 );
+                access?.validate();
+                if (
+                  bridgeForgetGeneration(
+                    memory,
+                    characterDocument.characterId,
+                  ) !== forgetGeneration
+                )
+                  throw new ProviderControllerError(
+                    "cancelled",
+                    "Memory changed during generation.",
+                  );
+                return output;
               } catch (error) {
                 if (error instanceof ProviderControllerError)
                   providerError = safeControllerError(error);

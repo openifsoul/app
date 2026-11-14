@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useWorkspaceBreadcrumbs } from "../lib/workspace-breadcrumbs";
 import { ArrowLeft, ArrowRight, Gamepad2, Search } from "lucide-react";
 import type { ProviderOption } from "../lib/api";
+import { minecraftConnectors } from "../../../shared/src/minecraft-connectors";
+import { MinecraftServerConnector } from "./MinecraftServerConnector";
+import { OptionSelect, SelectItem } from "./ui/select";
 import { GameConnectionSettings } from "./GameConnectionSettings";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
@@ -20,12 +23,26 @@ export function Games({
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState(false);
   const [visited, setVisited] = useState(false);
+  const [runtime, setRuntime] = useState("Vanilla 1.20.2");
+  const [connector, setConnector] = useState<keyof typeof minecraftConnectors>(
+    "minecraft-mineflayer",
+  );
+  const profiles = Object.entries(minecraftConnectors);
+  const runtimes = [
+    ...new Set(
+      profiles.map(([, profile]) => `${profile.loader} ${profile.version}`),
+    ),
+  ];
+  const matchesRuntime = profiles.filter(
+    ([, profile]) => `${profile.loader} ${profile.version}` === runtime,
+  );
   useWorkspaceBreadcrumbs("games", detail ? [{ label: "Minecraft" }] : [], () =>
     setDetail(false),
   );
-  const matches = "Minecraft Java Mineflayer"
-    .toLowerCase()
-    .includes(query.trim().toLowerCase());
+  const matches =
+    "Minecraft Java Mineflayer Citizens Easy NPC MineColonies CustomNPCs"
+      .toLowerCase()
+      .includes(query.trim().toLowerCase());
   return (
     <div className="games-workspace">
       <section
@@ -98,11 +115,60 @@ export function Games({
           <ArrowLeft aria-hidden="true" />
           Back to games
         </Button>
-        {visited && (
+        <div className="app-field-row grid gap-4 sm:grid-cols-2">
+          <div className="app-form-field grid gap-2">
+            <Label htmlFor="minecraft-runtime">
+              Server software and Minecraft version
+            </Label>
+            <OptionSelect
+              id="minecraft-runtime"
+              value={runtime}
+              onValueChange={(value) => {
+                setRuntime(value);
+                const match = profiles.find(
+                  ([, profile]) =>
+                    `${profile.loader} ${profile.version}` === value,
+                );
+                if (match)
+                  setConnector(match[0] as keyof typeof minecraftConnectors);
+              }}
+            >
+              {runtimes.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </OptionSelect>
+          </div>
+          <div className="app-form-field grid gap-2">
+            <Label htmlFor="minecraft-connector">Bridge</Label>
+            <OptionSelect
+              id="minecraft-connector"
+              value={connector}
+              onValueChange={(value) =>
+                setConnector(value as keyof typeof minecraftConnectors)
+              }
+            >
+              {matchesRuntime.map(([id, profile]) => (
+                <SelectItem key={id} value={id}>
+                  {profile.label}
+                </SelectItem>
+              ))}
+            </OptionSelect>
+          </div>
+        </div>
+        {visited && connector === "minecraft-mineflayer" && (
           <GameConnectionSettings
             providers={providers}
             selectedProvider={selectedProvider}
             selectedModel={selectedModel}
+          />
+        )}
+        {visited && connector !== "minecraft-mineflayer" && (
+          <MinecraftServerConnector
+            key={connector}
+            connector={connector}
+            providers={providers}
           />
         )}
       </section>

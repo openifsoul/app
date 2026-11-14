@@ -87,3 +87,43 @@ IFSOUL_DATA_DIR=/srv/ifsoul-data IFSOUL_PUBLIC_ORIGIN=https://ifsoul.example POR
 The generated `owner.json` in that directory contains the owner password and encryption key. Keep it private and provide only the owner password to the person signing into that service. The App displays an owner sign-in form and a Sign out control; passwords are not stored in browser storage. Provider keys remain separately encrypted in the service. An operator can explicitly set `IFSOUL_LISTEN_HOST` for a protected proxy/container network; non-loopback listeners require a configured HTTPS public origin. A loopback HTTP public origin is supported for isolated local testing. Invalid origin/listener configuration fails before opening or creating a memory store. Changing the model does not change the data directory; changing service origins never copies it.
 
 Signing out ends the browser owner session. Use Revoke or Clear to end the separately approved native companion grant. Local consent approval pauses an existing local client; reconnect after owner verification.
+
+## Minecraft server-side bridges
+
+| Bridge | Pinned Minecraft/runtime | Local acceptance |
+| --- | --- | --- |
+| Citizens 2.0.37 b3763 | Minecraft 1.21.4, Paper build 232, Java 21 | Native private dialogue |
+| Easy NPC 6.0.2 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Native private dialogue |
+| CustomNPCs Unofficial 1.21.1.20251230 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Builds and starts on the server; native dialogue pending |
+| MineColonies 1.1.1403 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Builds and starts on the server; native dialogue pending |
+
+Each server-side pairing grants private dialogue between one approved player
+and one NPC. Game mechanics and group scope remain with the game. Game setup
+does not prove model recall fidelity. The local Qwen model's source-faithful
+Russian recall remains unverified.
+
+In **Games → Configure Minecraft**, select the server software and Minecraft
+version, then choose the matching bridge. Mineflayer retains its companion
+flow. Citizens, Easy NPC, MineColonies and CustomNPCs-Unofficial require their
+matching server-side IfSoul plugin or mod and an operator-selected NPC.
+
+For these server-side bridges, select the owned character, memory and provider,
+enter the server-authenticated player UUID and the specific NPC identity, then
+approve private dialogue and issue a pairing code. MineColonies uses
+`dimension/colony ID/citizen ID` for the NPC. The server operator enters the
+one-use code in the bridge's configuration. An authenticated handshake must match
+the owner-approved connector, runtime profile, player and NPC before dialogue
+is accepted. The App displays the last handshake and grant status. A renewal
+fences the old grant and requires a new handshake for the same target.
+
+Install the server-side bridge separately on a compatible server. The App does
+not infer which loader or mods a server is using from its address. The selected
+runtime filters candidate bridge profiles. The authenticated device's runtime
+declaration checks the selected profile; compatibility is verified separately
+for each exact server/mod combination.
+
+Desktop can install a reviewed local IfSoul bridge JAR through the connector's
+**Install from local JAR** button. Select its exact build and your stopped
+server's folder. Desktop verifies the pinned hash and places the JAR in the
+expected `plugins` or `mods` directory. Existing files stay in place. Install
+upstream mods and set the connector configuration with your server operator.

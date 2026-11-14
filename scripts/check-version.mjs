@@ -5,7 +5,7 @@ const read = async (name) =>
 const release = await read("release.json");
 const manifest = await read("package.json");
 assert.equal(manifest.version, release.version);
-assert.equal(release.version, "0.5.0");
+assert.equal(release.version, "0.6.0");
 for (const value of Object.values(release.current))
   assert(
     value === "0.4.0" || value.endsWith("/0.4.0"),

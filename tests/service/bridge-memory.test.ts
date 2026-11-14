@@ -16,6 +16,7 @@ import {
 } from "../../apps/server/src/bridge.js";
 import {
   inspectBridgeMemory,
+  storedBridgeEvents,
   resetBridgeMemory,
   recordBridgeRequest,
   recallBridgeMemory,
@@ -323,13 +324,13 @@ test("continuation capacity and recall are bounded while older relevant evidence
         request({ context: `Continued observation ${index}.` }),
       );
     const continued = inspectBridgeMemory(memory, "shared-companion");
-    assert.ok(continued.entries.length <= BRIDGE_MEMORY_LIMITS.records);
+    assert.ok(continued.entries.length > BRIDGE_MEMORY_LIMITS.records);
     assert.match(
       JSON.stringify(
         recallBridgeMemory(memory, "shared-companion", "amethyst sundial"),
       ),
       /amethyst sundial/,
-      "Compaction preserves an early distinctive experience",
+      "Original retention preserves an early distinctive experience",
     );
   } finally {
     memory.close();
@@ -713,6 +714,9 @@ test("episodic continuity crosses 140 interactions, three worlds, restart and pr
       "initial-model",
       memory,
     );
+    const original = storedBridgeEvents(memory, "shared-companion").map(
+      (event) => [event.memoryId, JSON.stringify(event)] as const,
+    );
     for (let index = 1; index < 145; index++) {
       if (index === 72) {
         unwrap(memory.close());
@@ -731,6 +735,14 @@ test("episodic continuity crosses 140 interactions, three worlds, restart and pr
     }
     unwrap(memory.close());
     memory = unwrap(openSQLiteMemory(path));
+    const afterRestart = new Map(
+      storedBridgeEvents(memory, "shared-companion").map((event) => [
+        event.memoryId,
+        JSON.stringify(event),
+      ]),
+    );
+    for (const [id, bytes] of original)
+      assert.equal(afterRestart.get(id), bytes);
     for (const question of [
       "Where did we find the saffron astrolabe?",
       "Что мы делали в прошлых мирах?",
@@ -778,7 +790,7 @@ test("episodic continuity crosses 140 interactions, three worlds, restart and pr
   }
 });
 
-test("failed episode compaction leaves retained evidence unchanged and permits an exact retry", async () => {
+test("failed admission leaves retained evidence unchanged and permits an exact retry", async () => {
   const memory = unwrap(openSQLiteMemory(":memory:")),
     model = provider();
   try {
@@ -790,12 +802,12 @@ test("failed episode compaction leaves retained evidence unchanged and permits a
         request({ context: `Atomic fixture ${index}.` }),
       );
     const before = inspectBridgeMemory(memory, "shared-companion");
-    let failedCompactions = 0;
+    let failedCommits = 0;
     const failing = new Proxy(memory, {
       get(target, property) {
-        if (property === "compact")
+        if (property === "commit")
           return () => {
-            failedCompactions++;
+            failedCommits++;
             return failure("storage", "Synthetic compaction failure.");
           };
         const value = Reflect.get(target, property);
@@ -807,7 +819,7 @@ test("failed episode compaction leaves retained evidence unchanged and permits a
       () => recordBridgeRequest(failing, "shared-companion", next),
       /memory|storage|compact/i,
     );
-    assert.equal(failedCompactions, 1);
+    assert.equal(failedCommits, 1);
     assert.deepEqual(inspectBridgeMemory(memory, "shared-companion"), before);
     recordBridgeRequest(memory, "shared-companion", next);
     const saved = inspectBridgeMemory(memory, "shared-companion");
@@ -886,7 +898,7 @@ test("English and Russian source reports preserve actor, observer and companion 
   }
 });
 
-test("retained episode receipts prevent request and report resurrection and preserve report eight's historical actor", async () => {
+test("retained original receipts prevent request and report resurrection and preserve report eight's historical actor", async () => {
   const memory = unwrap(openSQLiteMemory(":memory:")),
     model = provider();
   const { observeBridgeRequest } =
@@ -926,12 +938,9 @@ test("retained episode receipts prevent request and report resurrection and pres
         }),
       );
     const before = inspectBridgeMemory(memory, "shared-companion");
-    const episode = before.episodes.find((entry) =>
-      entry.derived?.sources.some((source) => source.id === sourceId),
-    );
-    assert.ok(episode);
-    assert.ok(!before.entries.some((entry) => entry.id === sourceId));
-    assert.equal(unwrap(memory.getExchange(sourceId)), undefined);
+    const source = before.entries.find((entry) => entry.id === sourceId);
+    assert.ok(source);
+    assert.ok(unwrap(memory.getExchange(sourceId)));
     recordBridgeRequest(memory, "shared-companion", original);
     assert.deepEqual(inspectBridgeMemory(memory, "shared-companion"), before);
     assert.throws(
@@ -948,7 +957,7 @@ test("retained episode receipts prevent request and report resurrection and pres
       memory,
     );
     assert.deepEqual(inspectBridgeMemory(memory, "shared-companion"), before);
-    const eighth = JSON.parse(episode.summary).browserReports.find(
+    const eighth = JSON.parse(source.summary).browserReports.find(
       (report: { id: string }) => report.id === "eighth-report-7",
     );
     assert.equal(eighth.actor, "agent");
@@ -966,8 +975,16 @@ test("retained episode receipts prevent request and report resurrection and pres
           limit: 1000,
           maxBytes: 1000000,
         }),
-      ),
-      [],
+      ).map(({ eventType, recordedPayload }) => ({
+        eventType,
+        recordedPayload,
+      })),
+      [
+        {
+          eventType: "bridge-reset",
+          recordedPayload: { kind: "bridge-reset", forgetFence: true },
+        },
+      ],
     );
     assert.deepEqual(
       inspectBridgeMemory(memory, "shared-companion").episodes,
@@ -980,7 +997,7 @@ test("retained episode receipts prevent request and report resurrection and pres
   }
 });
 
-test("legacy append-only reset migration cannot resurrect old evidence or leave bridge receipts", async () => {
+test("legacy append-only reset hides older evidence while preserving original receipts", async () => {
   const memory = unwrap(openSQLiteMemory(":memory:")),
     model = provider();
   try {
@@ -1030,20 +1047,17 @@ test("legacy append-only reset migration cannot resurrect old evidence or leave 
         request({ context: `Fresh migration scene ${index}.` }),
       );
     const after = inspectBridgeMemory(memory, "shared-companion");
-    assert.ok(after.episodes.length > 0);
+    assert.ok(after.entries.length > 100);
     assert.ok(!JSON.stringify(after).includes("turquoise sundial"));
     assert.ok(
       !JSON.stringify(
         recallBridgeMemory(memory, "shared-companion", "turquoise sundial"),
       ).includes("turquoise sundial"),
     );
-    for (const id of oldReceipts)
-      assert.equal(unwrap(memory.getExchange(id)), undefined);
+    for (const id of oldReceipts) assert.ok(unwrap(memory.getExchange(id)));
     assert.ok(
-      !unwrap(memory.recall(query)).some(
-        (entry) =>
-          entry.memoryId === source.memoryId ||
-          entry.eventType === "bridge-reset",
+      unwrap(memory.recall(query)).some(
+        (entry) => entry.memoryId === source.memoryId,
       ),
     );
   } finally {
@@ -1051,7 +1065,7 @@ test("legacy append-only reset migration cannot resurrect old evidence or leave 
   }
 });
 
-test("episode eviction retains substantive outcomes in every world despite hundreds of later greetings", async () => {
+test("durable originals retain substantive outcomes in every world despite hundreds of later greetings", async () => {
   const memory = unwrap(openSQLiteMemory(":memory:"));
   const { observeBridgeRequest } =
     await import("../../apps/server/src/bridge.js");
@@ -1096,22 +1110,17 @@ test("episode eviction retains substantive outcomes in every world despite hundr
         memory,
       );
     const journal = inspectBridgeMemory(memory, "shared-companion");
-    assert.ok(journal.entries.length <= 100);
-    assert.ok(journal.episodes.length <= 60);
-    assert.ok(journal.retention.sourceRecordsPruned >= 320);
-    assert.ok(journal.retention.droppedEpisodes > 0);
-    assert.equal(
-      journal.retention.sourceRecordsPruned,
-      journal.retention.droppedEpisodes + journal.episodes.length,
-    );
+    assert.ok(journal.entries.length > 400);
+    assert.equal(journal.retention.sourceRecordsPruned, 0);
+    assert.equal(journal.episodes.length, 0);
     for (const [index, hostId] of worlds.entries()) {
-      const retained = journal.episodes.find(
+      const retained = journal.entries.find(
         (entry) =>
           entry.hostId === hostId && entry.summary.includes(outcomes[index]!),
       );
       assert.ok(retained, `Substantive outcome lost from ${hostId}`);
       assert.equal(retained.trust, "unverified");
-      assert.ok(retained.derived?.sources.length);
+      assert.ok(unwrap(memory.getExchange(retained.id)));
     }
     for (const question of [
       "What did we accomplish in past worlds?",
@@ -1121,22 +1130,6 @@ test("episode eviction retains substantive outcomes in every world despite hundr
       for (const outcome of outcomes)
         assert.ok(JSON.stringify(recall).includes(outcome));
     }
-    const character = unwrap(memory.getCharacter("shared-companion"))!;
-    const stored = unwrap(
-      memory.recall({
-        characterId: "shared-companion",
-        audienceParticipantIds: [character.participantId],
-        environmentIds: ["browser-continuation"],
-        limit: 1000,
-        maxBytes: 1000000,
-      }),
-    );
-    assert.ok(
-      stored.reduce(
-        (sum, entry) => sum + Buffer.byteLength(JSON.stringify(entry)),
-        0,
-      ) <= 900000,
-    );
   } finally {
     memory.close();
   }
@@ -1198,6 +1191,248 @@ test("delayed reports retain their original portrayed profile and invalid attrib
       assert.equal(model.prompts.length, calls);
       assert.deepEqual(inspectBridgeMemory(memory, "shared-companion"), before);
     }
+  } finally {
+    memory.close();
+  }
+});
+
+test("forget during bridge inference suppresses delivery and reflection writes", async () => {
+  const memory = unwrap(openSQLiteMemory(":memory:"));
+  const { browseMemory } =
+    await import("../../apps/runtime-host/src/memory-explorer.js");
+  let capture!: (input: Parameters<ModelClient["generate"]>[0]) => void;
+  let finish!: () => void;
+  const captured = new Promise<Parameters<ModelClient["generate"]>[0]>(
+    (resolve) => {
+      capture = resolve;
+    },
+  );
+  const hold = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  try {
+    await runBridgeRequest(
+      request({ context: "The amaranth lantern was forgotten." }),
+      provider().client,
+      "test-model",
+      memory,
+    );
+    const pending = runBridgeRequest(
+      request({ context: "What do you recall about the amaranth lantern?" }),
+      {
+        id: "ollama",
+        async generate(input) {
+          capture(input);
+          await hold;
+          return { ok: true, value: { content: "The amaranth lantern." } };
+        },
+      },
+      "test-model",
+      memory,
+    );
+    const rejected = assert.rejects(pending);
+    const input = await Promise.race([
+      captured,
+      pending.then(() => {
+        throw Error("Expected provider capture before delivery");
+      }),
+    ]);
+    assert.match(input.prompt, /The amaranth lantern was forgotten/);
+    resetBridgeMemory(memory, "shared-companion");
+    finish();
+    await rejected;
+    const page = unwrap(
+      browseMemory(
+        memory,
+        new URLSearchParams({
+          memoryId: "shared-companion",
+          q: "amaranth lantern",
+        }),
+      ),
+    );
+    assert.deepEqual(page.records, []);
+    assert.deepEqual(
+      inspectBridgeMemory(memory, "shared-companion").entries,
+      [],
+    );
+    const after = provider();
+    await runBridgeRequest(
+      request({ context: "Hello." }),
+      after.client,
+      "test-model",
+      memory,
+    );
+    assert.doesNotMatch(after.prompts[0]!, /amaranth lantern/);
+  } finally {
+    finish();
+    memory.close();
+  }
+});
+
+test("configured input estimate packs actual bridge input and leaves retained evidence unchanged", async () => {
+  const memory = unwrap(openSQLiteMemory(":memory:"));
+  const { observeBridgeRequest } =
+    await import("../../apps/server/src/bridge.js");
+  try {
+    const evidence = request({
+      context: "An older report names the cobalt compass and a locked gate.",
+      history: [
+        {
+          id: "older-claim",
+          hostId: "garden",
+          kind: "observation",
+          summary: "The cobalt compass is behind the locked gate.",
+        },
+        {
+          id: "contrary-claim",
+          hostId: "garden",
+          kind: "observation",
+          summary: "The cobalt compass is outside the locked gate.",
+        },
+      ],
+    });
+    observeBridgeRequest(evidence, memory);
+    for (let i = 0; i < 12; i++)
+      observeBridgeRequest(
+        request({
+          context: `Recent unrelated briefing ${i}. ${"Long generic report. ".repeat(45)}`,
+        }),
+        memory,
+      );
+    const before = inspectBridgeMemory(memory, "shared-companion").entries;
+    const { desktopOllamaContexts, resolveAppResourcePolicy } =
+      await import("../../apps/server/src/resource-policy.js");
+    const model = "qwen3:8b";
+    const policy = resolveAppResourcePolicy({
+      ollama: { contexts: desktopOllamaContexts },
+    }).ollama;
+    const context = policy.contexts[model]!;
+    const count = (
+      input: Pick<
+        Parameters<ModelClient["generate"]>[0],
+        "system" | "prompt" | "schema"
+      >,
+    ) => context.countInputTokens!({ ...input, model }).tokens;
+    const window = context.windowTokens;
+    const reserved = policy.provider.effective.maxOutputTokens;
+    assert.equal(window, 8192);
+    assert.equal(reserved, 2000);
+    const speech =
+      "Ранний отчёт указывал «behind the locked gate» [r1], а поздний — «outside the locked gate» [r2].";
+    let captured: Parameters<ModelClient["generate"]>[0] | undefined;
+    const result = await runBridgeRequest(
+      request({ context: "Где компас по обоим отчётам?" }),
+      {
+        id: "ollama",
+        async generate(input) {
+          captured = input;
+          return {
+            ok: true,
+            value: { content: speech },
+          };
+        },
+      },
+      model,
+      memory,
+      { fitsModelInput: (input) => count(input) + reserved <= window },
+    );
+    assert.equal(result.speech, speech);
+    assert.ok(captured);
+    assert.ok(count(captured) + reserved <= window);
+    assert.match(captured.prompt, /behind the locked gate/);
+    assert.match(captured.prompt, /outside the locked gate/);
+    assert.match(captured.prompt, /reportRefs/);
+    assert.match(captured.system, /keep conflicting claims separate/);
+    assert.match(
+      captured.system,
+      /Copy source names, distinctive object phrases and exact location phrases verbatim/,
+    );
+    const after = inspectBridgeMemory(memory, "shared-companion").entries;
+    assert.deepEqual(
+      after.filter((entry) => before.some((old) => old.id === entry.id)),
+      before,
+    );
+  } finally {
+    memory.close();
+  }
+});
+
+test("persistent source access revocation fences an in-flight bridge model and owner search", async () => {
+  const memory = unwrap(openSQLiteMemory(":memory:"));
+  const { createBridgeSourcePolicy } =
+    await import("../../apps/server/src/bridge-source-access.js");
+  const { browseMemory } =
+    await import("../../apps/runtime-host/src/memory-explorer.js");
+  const values = new Map<string, string>();
+  const createPolicy = () =>
+    createBridgeSourcePolicy({
+      get: (key) => values.get(key),
+      set: (key, value) => {
+        values.set(key, value);
+      },
+      delete: (key) => {
+        values.delete(key);
+      },
+    });
+  const registry = createPolicy();
+  try {
+    await runBridgeRequest(
+      request({
+        context: "The restricted topaz orchard.",
+      }),
+      provider().client,
+      "test-model",
+      memory,
+    );
+    const before = inspectBridgeMemory(memory, "shared-companion").entries[0];
+    const access = registry.snapshot("shared-companion");
+    let sent = false;
+    await assert.rejects(
+      runBridgeRequest(
+        request({ hostId: "dungeon", context: "Where is the topaz orchard?" }),
+        {
+          id: "ollama",
+          async generate(input) {
+            sent = true;
+            assert.match(input.prompt, /restricted topaz orchard/);
+            registry.revoke("shared-companion", "garden");
+            return {
+              ok: true,
+              value: { content: "The restricted topaz orchard." },
+            };
+          },
+        },
+        "test-model",
+        memory,
+        { sourceAccess: access.allows, validateSourceAccess: access.validate },
+      ),
+    );
+    assert.ok(sent);
+    assert.deepEqual(
+      inspectBridgeMemory(memory, "shared-companion").entries[0],
+      before,
+    );
+    const current = createPolicy().snapshot("shared-companion");
+    const page = unwrap(
+      browseMemory(
+        memory,
+        new URLSearchParams({
+          memoryId: "shared-companion",
+          q: "restricted topaz orchard",
+        }),
+        current,
+      ),
+    );
+    assert.deepEqual(page.records, []);
+    const model = provider();
+    await runBridgeRequest(
+      request({ hostId: "dungeon", context: "Hello again." }),
+      model.client,
+      "test-model",
+      memory,
+      { sourceAccess: current.allows, validateSourceAccess: current.validate },
+    );
+    assert.doesNotMatch(model.prompts[0]!, /restricted topaz orchard/);
   } finally {
     memory.close();
   }

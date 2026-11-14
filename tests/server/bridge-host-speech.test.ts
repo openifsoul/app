@@ -150,7 +150,7 @@ test("host reactions preserve the latest actual user utterance across worlds and
   }
 });
 
-test("latest actual user message survives raw consolidation and ignores host contexts", async () => {
+test("latest actual user message survives hundreds of host requests and ignores host contexts", async () => {
   const opened = openSQLiteMemory(":memory:");
   assert.ok(opened.ok);
   if (!opened.ok) return;
@@ -167,7 +167,7 @@ test("latest actual user message survives raw consolidation and ignores host con
         opened.value,
       );
     assert.ok(
-      inspectBridgeMemory(opened.value, "shared-memory").episodes.some(
+      inspectBridgeMemory(opened.value, "shared-memory").entries.some(
         (entry) => entry.kind === "chat",
       ),
     );

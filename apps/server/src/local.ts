@@ -3,12 +3,16 @@ import {
   resolveGamePair,
   gameDeviceRequest,
 } from "./game-connections.js";
+import { browseScopedHistory } from "../../runtime-host/src/memory-explorer.js";
+import { failure } from "@ifsoul/core/memory/port";
+import { createBridgeSourcePolicy } from "./bridge-source-access.js";
 import { createGameExecutor } from "./game-executor.js";
 import { createAppBehavior } from "./behavior.js";
 import { createSQLParticipantStore } from "../../runtime-host/src/participant-sessions.js";
 import type { SQLDriver } from "@ifsoul/core/memory/sql";
 import { trustedLocalRequest } from "./app-auth.js";
 import {
+  desktopOllamaContexts,
   resolveAppResourcePolicy,
   httpBodyBudget,
   type AppResourceConfiguration,
@@ -24,13 +28,14 @@ import {
   existsSync,
   chmodSync,
 } from "node:fs";
-import { resolve, extname } from "node:path";
-import { randomBytes } from "node:crypto";
+import { resolve, extname, relative, isAbsolute } from "node:path";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { openSQLiteMemory } from "@ifsoul/core/memory/sqlite";
 import {
   createModelController,
   createScenarioController,
   SCENARIO_MODEL,
+  type ModelInputBudget,
 } from "../../runtime-host/src/service.js";
 import {
   createOpenAIProvider,
@@ -44,6 +49,7 @@ import {
   type ProviderOption,
 } from "./api.js";
 import { secured } from "./security.js";
+const desktopSecret = process.env.IFSOUL_DESKTOP_SECRET;
 let resourceConfiguration: AppResourceConfiguration = {};
 if (process.env.IFSOUL_RESOURCE_POLICY_FILE) {
   try {
@@ -62,10 +68,40 @@ if (process.env.IFSOUL_OLLAMA_PROMPT_BUDGET_BYTES !== undefined)
       promptBytes: Number(process.env.IFSOUL_OLLAMA_PROMPT_BUDGET_BYTES),
     },
   };
+if (desktopSecret !== undefined)
+  resourceConfiguration = {
+    ...resourceConfiguration,
+    ollama: {
+      ...resourceConfiguration.ollama,
+      contexts: {
+        ...desktopOllamaContexts,
+        ...resourceConfiguration.ollama?.contexts,
+      },
+    },
+  };
 const resourcePolicy = resolveAppResourcePolicy(resourceConfiguration);
 const port = Number(process.env.PORT ?? 8788);
 if (!Number.isInteger(port) || port < 1024 || port > 65535)
   throw Error("Choose a supported listen port");
+const desktopResponseKey = process.env.IFSOUL_DESKTOP_RESPONSE_KEY;
+const desktopCompanionPort = process.env.IFSOUL_DESKTOP_COMPANION_PORT;
+const parentPort = (
+  process as typeof process & {
+    parentPort?: {
+      postMessage(message: unknown): void;
+      on(event: "message", callback: (event: { data: unknown }) => void): void;
+    };
+  }
+).parentPort;
+if (
+  desktopSecret !== undefined &&
+  (!parentPort ||
+    !/^[a-zA-Z0-9_-]{43}$/.test(desktopSecret) ||
+    !/^[a-zA-Z0-9_-]{43}$/.test(desktopResponseKey ?? "") ||
+    !desktopCompanionPort ||
+    !/^\d{4,5}$/.test(desktopCompanionPort))
+)
+  throw Error("Invalid desktop service configuration");
 const selfHosted = process.env.IFSOUL_PUBLIC_ORIGIN !== undefined;
 const origin = selfHosted
   ? process.env.IFSOUL_PUBLIC_ORIGIN!
@@ -131,6 +167,7 @@ const store: PrivateStore = {
     privateDB.prepare("DELETE FROM settings WHERE key=?").run(key);
   },
 };
+const bridgeSourcePolicy = createBridgeSourcePolicy(store);
 const ollamaOptions = {
   baseUrl: process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
   limits: resourcePolicy.ollama.provider.effective,
@@ -147,6 +184,37 @@ const compactOllama = createOllamaProvider({
     ),
   },
 });
+function ollamaPromptBudget(
+  selection: import("@ifsoul/core/model-providers/types").ProviderSelection,
+) {
+  if (selection.provider !== "ollama") return undefined;
+  const context =
+    resourcePolicy.ollama.budgetPolicy.contexts?.[selection.model];
+  const fitsModelInput: ModelInputBudget | undefined = context?.countInputTokens
+    ? (input) => {
+        const output = resourcePolicy.ollama.provider.effective.maxOutputTokens;
+        const properties = input.schema.properties;
+        const reserved =
+          resourcePolicy.ollama.compactReflection &&
+          properties &&
+          typeof properties === "object" &&
+          "memoryUpdates" in properties
+            ? Math.min(768, output)
+            : output;
+        return (
+          context.countInputTokens!({ ...input, model: selection.model })
+            .tokens +
+            reserved <=
+          context.windowTokens
+        );
+      }
+    : undefined;
+  return {
+    bytes: resourcePolicy.ollama.promptBytes,
+    ceiling: resourcePolicy.ollama.promptCeilingBytes,
+    fitsModelInput,
+  };
+}
 const localOllamaClient: typeof ollama = {
   ...ollama,
   generate(input) {
@@ -178,7 +246,11 @@ const providers = async (): Promise<ProviderOption[]> => {
       models: installed.ok
         ? installed.value.map((id) => ({ id, label: id }))
         : [],
-      ...(!installed.ok ? { reason: "Start Ollama on this computer." } : {}),
+      ...(!installed.ok
+        ? { reason: "Install and start Ollama on this computer." }
+        : !installed.value.length
+          ? { reason: "Install a model in Ollama, then refresh." }
+          : {}),
     },
     {
       id: "cloudflare",
@@ -209,6 +281,7 @@ let behavior: ReturnType<typeof createAppBehavior> | undefined;
 const service = createCharacterWorkspace({
   memory,
   chatEnvironment: "app",
+  bridgeSourcePolicy: bridgeSourcePolicy.snapshot,
   runtimeLimits: resourcePolicy.runtime.effective,
   runtimeCeilings: resourcePolicy.runtimeCeilings,
   clientFor,
@@ -216,38 +289,53 @@ const service = createCharacterWorkspace({
     const controller = async (
       input: import("@ifsoul/core/runtime").ControllerInput,
       signal: AbortSignal,
-    ) =>
-      selection.provider === "scenario"
-        ? createScenarioController()(input, signal)
-        : createModelController({
-            client: await clientFor(selection),
-            model: selection.model,
-            promptBudgetBytes:
-              selection.provider === "ollama"
-                ? resourcePolicy.ollama.promptBytes
-                : undefined,
-            promptBudgetCeilingBytes:
-              selection.provider === "ollama"
-                ? resourcePolicy.ollama.promptCeilingBytes
-                : undefined,
-            compactOutput:
-              selection.provider === "ollama" &&
-              resourcePolicy.ollama.compactReflection,
-            ...(behavior?.enabled()
-              ? {}
-              : {
-                  reflection: {
-                    memory,
-                    ...(selection.provider === "ollama"
-                      ? {
-                          sourceBudgetBytes:
-                            resourcePolicy.ollama.reflectionSourceBytes,
-                          maxSources: resourcePolicy.ollama.reflectionSources,
-                        }
-                      : {}),
-                  },
-                }),
-          })(input, signal);
+    ) => {
+      if (selection.provider === "scenario")
+        return createScenarioController()(input, signal);
+      const sourceAccess = bridgeSourcePolicy.snapshot(
+        input.character.characterId,
+      );
+      const client = await clientFor(selection);
+      return createModelController({
+        client: {
+          id: client.id,
+          async generate(generation) {
+            sourceAccess.validate();
+            const result = await client.generate(generation);
+            sourceAccess.validate();
+            return result;
+          },
+        },
+        fitsModelInput: ollamaPromptBudget(selection)?.fitsModelInput,
+        model: selection.model,
+        promptBudgetBytes:
+          selection.provider === "ollama"
+            ? resourcePolicy.ollama.promptBytes
+            : undefined,
+        promptBudgetCeilingBytes:
+          selection.provider === "ollama"
+            ? resourcePolicy.ollama.promptCeilingBytes
+            : undefined,
+        compactOutput:
+          selection.provider === "ollama" &&
+          resourcePolicy.ollama.compactReflection,
+        ...(behavior?.enabled()
+          ? {}
+          : {
+              reflection: {
+                memory,
+                sourceAccess: sourceAccess.allows,
+                ...(selection.provider === "ollama"
+                  ? {
+                      sourceBudgetBytes:
+                        resourcePolicy.ollama.reflectionSourceBytes,
+                      maxSources: resourcePolicy.ollama.reflectionSources,
+                    }
+                  : {}),
+              },
+            }),
+      })(input, signal);
+    };
     return behavior
       ? behavior.guardController(input, signal, controller)
       : controller(input, signal);
@@ -267,8 +355,9 @@ const participantDriver: SQLDriver = {
     }
   },
 };
+const participantStore = createSQLParticipantStore(participantDriver, true);
 behavior = createAppBehavior({
-  store: createSQLParticipantStore(participantDriver),
+  store: participantStore,
   access: { principalId: "local-owner", hostId: "app" },
   workspace: service,
 });
@@ -277,8 +366,9 @@ const gameBroker = createGameConnectionBroker({
   transaction: (work) => participantDriver.transaction(work),
 });
 const gameExecutor = createGameExecutor({
-  store: createSQLParticipantStore(participantDriver),
+  store: participantStore,
   clientFor: (selection) => clientFor(selection),
+  promptBudgetFor: ollamaPromptBudget,
   validate: async (binding) => gameBroker.current(binding),
 });
 const ownerAPI = createAPI({
@@ -293,13 +383,40 @@ const ownerAPI = createAPI({
   service,
   behavior,
   providers,
+  browseGameMemory(params) {
+    try {
+      const binding = gameBroker.inspection(
+        "local-owner",
+        params.get("connection") ?? "",
+        params.get("memoryId") ?? "",
+      );
+      return browseScopedHistory(params, {
+        worldId: binding.hostId,
+        characterId: binding.characterId,
+        events: gameExecutor.history(binding),
+        search: (text) =>
+          participantStore.searchHistory(
+            binding.principalId,
+            `session-${binding.connectionId}`,
+            text,
+          ),
+      });
+    } catch {
+      return failure(
+        "unauthorized",
+        "This connection history is not available.",
+      );
+    }
+  },
+  revokeMemorySource(memoryId, worldId, sourceId) {
+    const owned = memory.getCharacter(memoryId);
+    if (!owned.ok || !owned.value) throw Error("Memory unavailable.");
+    bridgeSourcePolicy.revoke(memoryId, worldId, sourceId);
+  },
   gameConnections: {
     controlProof: async () => gameBroker.controlProof("local-owner"),
     history: async (id) => {
-      const binding = gameBroker
-        .list("local-owner")
-        .find((b) => b.connectionId === id);
-      if (!binding) throw Error("Unknown connection");
+      const binding = gameBroker.inspection("local-owner", id);
       return gameExecutor.history(binding);
     },
     list: async () => gameBroker.list("local-owner"),
@@ -314,12 +431,23 @@ const ownerAPI = createAPI({
     },
   },
   observeBridge: (body) => {
+    const sourceAccess = bridgeSourcePolicy.snapshot(
+      body.memoryId ?? body.character.id,
+    );
+    if (!sourceAccess.allows(body.hostId, body.requestId))
+      throw Error("Memory world unavailable.");
     observeBridgeRequest(body, memory, {
+      sourceAccess: sourceAccess.allows,
       bridgeLimits: resourcePolicy.bridge,
       retainedHistoryEntries: resourcePolicy.retainedHistoryEntries,
     });
   },
   bridge: async (body, selection) => {
+    const sourceAccess = bridgeSourcePolicy.snapshot(
+      body.memoryId ?? body.character.id,
+    );
+    if (!sourceAccess.allows(body.hostId, body.requestId))
+      throw Error("Memory world unavailable.");
     const policy = await behavior?.prepareBridge(body);
     try {
       return await runBridgeRequest(
@@ -329,6 +457,9 @@ const ownerAPI = createAPI({
         memory,
         {
           ...(policy ? { behavior: policy } : {}),
+          fitsModelInput: ollamaPromptBudget(selection)?.fitsModelInput,
+          sourceAccess: sourceAccess.allows,
+          validateSourceAccess: sourceAccess.validate,
           bridgeLimits: resourcePolicy.bridge,
           retainedHistoryEntries: resourcePolicy.retainedHistoryEntries,
           runtimeLimits: resourcePolicy.runtime.effective,
@@ -375,19 +506,67 @@ const mime: Record<string, string> = {
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
   ".xml": "application/xml; charset=utf-8",
+  ".woff2": "font/woff2",
 };
-const api = async (request: Request) => {
+const api = async (request: Request, serverConnectorOnly: boolean) => {
   const path = new URL(request.url).pathname;
   if (path.startsWith("/api/game/device/")) {
     const response = await gameDeviceRequest(
       request,
       gameBroker,
-      (binding, body) => gameExecutor.execute(binding, body),
+      (binding, body) => gameExecutor.execute(binding, body, request.signal),
+      serverConnectorOnly,
     );
     return secured(response);
   }
   return ownerAPI(request);
 };
+const devicePaths = new Set([
+  "/api/game/device/redeem",
+  "/api/game/device/ready",
+  "/api/game/device/dialogue",
+  "/api/game/device/revoke",
+  "/api/game/device/owner-proof",
+  "/api/game/device/history-consent",
+]);
+const desktopCompanionPaths = new Map([
+  ["status", "GET"],
+  ["configure", "POST"],
+  ["start", "POST"],
+  ["stop", "POST"],
+  ["reconnect", "POST"],
+  ["clear", "POST"],
+]);
+async function desktopCompanionRequest(request: Request, action: string) {
+  if (desktopCompanionPaths.get(action) !== request.method)
+    return secured(
+      Response.json({ error: { code: "not-found" } }, { status: 404 }),
+    );
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${desktopCompanionPort}/${action}`,
+      {
+        method: request.method,
+        redirect: "error",
+        signal: AbortSignal.timeout(14000),
+        headers: {
+          origin,
+          "x-ifsoul-desktop": desktopSecret!,
+          authorization: request.headers.get("authorization") ?? "",
+          "content-type": "application/json",
+        },
+        ...(request.method === "POST" ? { body: await request.text() } : {}),
+      },
+    );
+    return secured(
+      Response.json(await response.json(), { status: response.status }),
+    );
+  } catch {
+    return secured(
+      Response.json({ error: { code: "unreachable" } }, { status: 503 }),
+    );
+  }
+}
 const server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== publicURL.host) {
@@ -396,6 +575,29 @@ const server = createServer(async (req, res) => {
       return;
     }
     const pathname = new URL(req.url ?? "/", origin).pathname;
+    const supplied = req.headers["x-ifsoul-desktop"];
+    const desktopAuthenticated =
+      !desktopSecret ||
+      (typeof supplied === "string" &&
+        Buffer.byteLength(supplied) === desktopSecret.length &&
+        timingSafeEqual(Buffer.from(supplied), Buffer.from(desktopSecret)));
+    if (!desktopAuthenticated && !devicePaths.has(pathname)) {
+      res.writeHead(403, { Connection: "close" });
+      res.end("Open the local service in IfSoul Desktop.");
+      return;
+    }
+    const nonce = req.headers["x-ifsoul-desktop-nonce"];
+    if (
+      desktopResponseKey &&
+      typeof nonce === "string" &&
+      /^[a-zA-Z0-9_-]{32}$/.test(nonce)
+    )
+      res.setHeader(
+        "X-IfSoul-Desktop-Proof",
+        createHmac("sha256", desktopResponseKey)
+          .update(nonce)
+          .digest("base64url"),
+      );
     const headers = new Headers();
     for (const [k, v] of Object.entries(req.headers)) {
       if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(",") : v);
@@ -403,13 +605,7 @@ const server = createServer(async (req, res) => {
     if (
       !selfHosted &&
       pathname.startsWith("/api/") &&
-      ![
-        "/api/game/device/redeem",
-        "/api/game/device/ready",
-        "/api/game/device/dialogue",
-        "/api/game/device/revoke",
-        "/api/game/device/owner-proof",
-      ].includes(pathname) &&
+      !devicePaths.has(pathname) &&
       !trustedLocalRequest(
         new Request(new URL(req.url ?? "/", origin), {
           method: req.method,
@@ -468,19 +664,38 @@ const server = createServer(async (req, res) => {
       }
       chunks.push(b);
     }
+    const cancellation = desktopSecret ? new AbortController() : undefined;
+    if (cancellation) {
+      res.once("close", () => {
+        if (!res.writableEnded) cancellation.abort();
+      });
+      if (res.destroyed) cancellation.abort();
+    }
     const request = new Request(new URL(req.url ?? "/", origin), {
       method: req.method,
       headers,
+      signal: cancellation?.signal,
       ...(chunks.length ? { body: Buffer.concat(chunks) } : {}),
     });
     let response: Response;
-    if (new URL(request.url).pathname.startsWith("/api/"))
-      response = await api(request);
+    if (desktopSecret && pathname.startsWith("/api/desktop/companion/"))
+      response = await desktopCompanionRequest(
+        request,
+        pathname.slice("/api/desktop/companion/".length),
+      );
+    else if (pathname.startsWith("/api/"))
+      response = await api(request, !desktopAuthenticated);
     else {
       const pageURL = new URL(request.url);
       const pathname = decodeURIComponent(pageURL.pathname);
       let file = resolve(webRoot, `.${pathname}`);
-      if (!file.startsWith(webRoot + "/") || !extname(file))
+      const asset = relative(webRoot, file);
+      if (
+        !asset ||
+        asset.startsWith("..") ||
+        isAbsolute(asset) ||
+        !extname(file)
+      )
         file = resolve(webRoot, "index.html");
       try {
         response = secured(
@@ -495,6 +710,17 @@ const server = createServer(async (req, res) => {
           status: 404,
         });
       }
+    }
+    if (desktopSecret) {
+      const policy = response.headers.get("Content-Security-Policy");
+      if (policy)
+        response.headers.set(
+          "Content-Security-Policy",
+          policy.replace(
+            "connect-src 'self' http://127.0.0.1:8811",
+            "connect-src 'self'",
+          ),
+        );
     }
     res.writeHead(response.status, Object.fromEntries(response.headers));
     res.end(Buffer.from(await response.arrayBuffer()));
@@ -513,7 +739,18 @@ const server = createServer(async (req, res) => {
 });
 server.requestTimeout = resourcePolicy.http.requestTimeoutMs;
 server.headersTimeout = resourcePolicy.http.headersTimeoutMs;
+server.once("error", () => {
+  privateDB.close();
+  memory.close();
+  if (!desktopSecret)
+    console.error("Could not listen on the configured App port.");
+  process.exit(1);
+});
 server.listen(port, listenHost, () => {
+  if (desktopSecret) {
+    parentPort?.postMessage({ type: "ready" });
+    return;
+  }
   console.log(
     `IfSoul App (${selfHosted ? "self-hosted" : "local"}): ${origin}`,
   );
@@ -536,3 +773,7 @@ function stop() {
 }
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
+if (desktopSecret)
+  parentPort?.on("message", ({ data }) => {
+    if (data === "stop") stop();
+  });

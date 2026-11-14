@@ -25,20 +25,23 @@ function fixture() {
     now: () => at,
   });
   const db = new DatabaseSync(":memory:");
-  const store = createSQLParticipantStore({
-    prepare: (q) => db.prepare(q),
-    transaction: (f) => {
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        const x = f();
-        db.exec("COMMIT");
-        return x;
-      } catch (e) {
-        db.exec("ROLLBACK");
-        throw e;
-      }
+  const store = createSQLParticipantStore(
+    {
+      prepare: (q) => db.prepare(q),
+      transaction: (f) => {
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          const x = f();
+          db.exec("COMMIT");
+          return x;
+        } catch (e) {
+          db.exec("ROLLBACK");
+          throw e;
+        }
+      },
     },
-  });
+    true,
+  );
   const grant = () =>
     broker.create("owner", {
       characterId: "profile",
@@ -373,5 +376,187 @@ test("present empty connection and proof documents fail without replacement", ()
         : broker.controlProof("owner"),
     );
     assert.deepEqual([...data], before);
+  }
+});
+
+test("owner inspection requires explicit authenticated player grant for the exact connection and memory", async () => {
+  const f = fixture();
+  try {
+    const grant = f.grant();
+    const device = f.broker.redeem(grant.code);
+    const binding = f.broker.ready(device.token, player);
+    const inspect = () =>
+      f.broker.inspection("owner", binding.connectionId, binding.memoryId);
+    assert.throws(inspect);
+    const consent = (allowed: boolean) =>
+      gameDeviceRequest(
+        new Request("http://localhost/api/game/device/history-consent", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${device.token}`,
+          },
+          body: JSON.stringify({ allowed }),
+        }),
+        f.broker,
+        async () => {
+          throw Error("Consent must bypass model generation");
+        },
+      );
+    assert.equal((await consent(true)).status, 200);
+    assert.equal(inspect().player?.uuid, player.uuid);
+    assert.throws(() =>
+      f.broker.inspection("other", binding.connectionId, binding.memoryId),
+    );
+    assert.throws(() =>
+      f.broker.inspection("owner", binding.connectionId, "other-memory"),
+    );
+    assert.equal((await consent(false)).status, 200);
+    assert.throws(inspect);
+    await consent(true);
+    f.broker.revoke("owner", binding.connectionId);
+    assert.throws(inspect);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("private text index scopes exact owner and session with transactional writes", () => {
+  const f = fixture();
+  try {
+    for (const principal of ["owner", "other"]) {
+      f.store.transact(principal, (state) => {
+        for (let n = 0; n < 200; n++)
+          state.events.push({
+            eventId: `event-${n}`,
+            sessionId: n % 2 ? "session-one" : "session-two",
+            revision: 1,
+            channelId: "private",
+            senderId: "player",
+            recipientIds: ["npc"],
+            observerIds: [],
+            text: "Synthetic copper orchard",
+          });
+      });
+    }
+    const matches = f.store.searchHistory(
+      "owner",
+      "session-one",
+      "copper orchard",
+    );
+    assert.equal(matches.size, 100);
+    assert.ok(matches.has("event-1") && !matches.has("event-2"));
+    assert.equal(
+      f.store.searchHistory("missing", "session-one", "copper orchard").size,
+      0,
+    );
+    assert.throws(() =>
+      f.store.transact("owner", (state) => {
+        state.events.splice(0);
+        throw Error("fixture rollback");
+      }),
+    );
+    assert.equal(
+      f.store.searchHistory("owner", "session-one", "copper orchard").size,
+      100,
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("server connector handshake is bound to the owner's exact compatibility target", async () => {
+  const { broker, db, grant: createLegacy } = fixture();
+  const target = {
+    connector: "minecraft-citizens" as const,
+    npcId: "22222222-2222-2222-2222-222222222222",
+    playerId: player.uuid,
+  };
+  const resolved = {
+    characterId: "profile",
+    memoryId: "memory",
+    provider: "scenario" as const,
+    model: "synthetic",
+    character: { id: "profile", name: "Lumen", temperament: "Calm" },
+    minecraftTarget: target,
+  };
+  const send = (
+    action: string,
+    body: unknown,
+    token?: string,
+    fromBrowser = false,
+  ) =>
+    gameDeviceRequest(
+      new Request(`http://127.0.0.1/api/game/device/${action}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(fromBrowser ? { origin: "http://127.0.0.1" } : {}),
+        },
+        body: JSON.stringify(body),
+      }),
+      broker,
+      async () => ({ speech: "Private reply" }),
+      true,
+    );
+  try {
+    const legacy = createLegacy();
+    assert.equal((await send("redeem", { code: legacy.code })).status, 403);
+    assert.ok(broker.redeem(legacy.code).token);
+    const grant = broker.create("owner", resolved);
+    assert.equal(
+      (await send("redeem", { code: grant.code }, undefined, true)).status,
+      403,
+    );
+    const { token } = await (await send("redeem", { code: grant.code })).json();
+    const hello = {
+      connector: target.connector,
+      loader: "Paper",
+      version: "1.21.4",
+      upstream: "2.0.37-b3763",
+      npcId: target.npcId,
+    };
+    assert.equal((await send("ready", { player }, token)).status, 403);
+    assert.equal(
+      (
+        await send(
+          "ready",
+          { player, minecraft: { ...hello, version: "1.21.5" } },
+          token,
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (await send("ready", { player, minecraft: hello }, token)).status,
+      200,
+    );
+    assert.equal(
+      (await send("dialogue", { requestId: "hello", text: "Hi" }, token))
+        .status,
+      200,
+    );
+    assert.throws(() =>
+      broker.create(
+        "owner",
+        { ...resolved, minecraftTarget: { ...target, npcId: player.uuid } },
+        grant.connection.connectionId,
+      ),
+    );
+    const renewal = broker.create(
+      "owner",
+      resolved,
+      grant.connection.connectionId,
+    );
+    assert.equal(renewal.connection.hostId, grant.connection.hostId);
+    assert.equal(renewal.connection.player, undefined);
+    assert.equal(
+      (await send("dialogue", { requestId: "old-grant", text: "Hi" }, token))
+        .status,
+      403,
+    );
+  } finally {
+    db.close();
   }
 });

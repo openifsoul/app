@@ -16,11 +16,58 @@ import type { SQLDriver } from "@ifsoul/core/memory/sql";
 import type { SessionHostPort } from "@ifsoul/adapter-sdk";
 
 /** The caller owns database lifecycle; this composition never opens personal stores. */
-export function createSQLParticipantStore(db: SQLDriver): ParticipantStore {
+export function createSQLParticipantStore(
+  db: SQLDriver,
+  indexedHistory = false,
+): ParticipantStore & {
+  searchHistory(
+    principalId: string,
+    sessionId: string,
+    text: string,
+  ): Set<string>;
+} {
   db.prepare(
     "CREATE TABLE IF NOT EXISTS participant_sessions (principal_id TEXT PRIMARY KEY, document TEXT NOT NULL)",
   ).run();
+  if (indexedHistory)
+    db.transaction(() => {
+      db.prepare(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS participant_history_fts USING fts5(principal UNINDEXED, session UNINDEXED, event UNINDEXED, text)",
+      ).run();
+      db.prepare(
+        "CREATE TABLE IF NOT EXISTS participant_history_index_version (version INTEGER PRIMARY KEY)",
+      ).run();
+      if (
+        !db
+          .prepare(
+            "SELECT version FROM participant_history_index_version WHERE version=1",
+          )
+          .get()
+      ) {
+        db.prepare(
+          `INSERT INTO participant_history_fts(principal, session, event, text)
+        SELECT principal_id, json_extract(item.value,'$.sessionId'), json_extract(item.value,'$.eventId'), json_extract(item.value,'$.text')
+        FROM participant_sessions, json_each(document,'$.events') AS item`,
+        ).run();
+        db.prepare(
+          "INSERT INTO participant_history_index_version(version) VALUES (1)",
+        ).run();
+      }
+    });
   return {
+    searchHistory(principalId, sessionId, text) {
+      if (!indexedHistory) throw new SessionError("invalid");
+      const phrase = `"${text.replaceAll('"', '""')}"`;
+      return new Set(
+        db
+          .prepare(
+            `SELECT event FROM participant_history_fts
+        WHERE participant_history_fts MATCH ? AND principal=? AND session=?`,
+          )
+          .all(phrase, principalId, sessionId)
+          .map((row) => String(row.event)),
+      );
+    },
     transact(principalId, work) {
       return db.transaction(() => {
         const row = db
@@ -33,7 +80,32 @@ export function createSQLParticipantStore(db: SQLDriver): ParticipantStore {
           : emptyParticipantState();
         if (state.format !== "ifsoul-participants/0.4.0")
           throw new SessionError("invalid");
+        const prior = indexedHistory
+          ? new Map(state.events.map((event) => [event.eventId, event]))
+          : undefined;
         const result = work(state);
+        if (prior) {
+          for (const event of state.events) {
+            const original = prior.get(event.eventId);
+            prior.delete(event.eventId);
+            if (
+              original?.sessionId === event.sessionId &&
+              original.text === event.text
+            )
+              continue;
+            if (original)
+              db.prepare(
+                "DELETE FROM participant_history_fts WHERE principal=? AND event=?",
+              ).run(principalId, event.eventId);
+            db.prepare(
+              "INSERT INTO participant_history_fts(principal,session,event,text) VALUES (?,?,?,?)",
+            ).run(principalId, event.sessionId, event.eventId, event.text);
+          }
+          for (const eventId of prior.keys())
+            db.prepare(
+              "DELETE FROM participant_history_fts WHERE principal=? AND event=?",
+            ).run(principalId, eventId);
+        }
         db.prepare(
           "INSERT INTO participant_sessions(principal_id, document) VALUES (?, ?) ON CONFLICT(principal_id) DO UPDATE SET document=excluded.document",
         ).run(principalId, JSON.stringify(state));

@@ -8,7 +8,10 @@ import type {
   TaskReport,
 } from "@ifsoul/core/protocol";
 import type { MemoryPort, Result } from "@ifsoul/core/memory/port";
-import type { inspectBridgeMemory } from "./bridge-memory.js";
+import type {
+  inspectBridgeMemory,
+  BridgeSourceAccess,
+} from "./bridge-memory.js";
 import type { AgentController } from "@ifsoul/core/runtime";
 import type {
   ModelClient,
@@ -81,6 +84,11 @@ export interface LabServiceOptions {
   persona?: CharacterInstance;
   clientFor?: (selection: ProviderSelection) => Promise<ModelClient>;
   memory: MemoryPort;
+  bridgeSourcePolicy?: (memoryId: string) => {
+    allows: BridgeSourceAccess;
+    validate: () => void;
+    cursorKey?: string;
+  };
   controllerFor: (selection: ProviderSelection) => AgentController;
   now?: () => Date;
 }
@@ -102,6 +110,9 @@ export interface CharacterSummary {
   description: string;
 }
 export interface CharacterWorkspace extends LabService {
+  browseMemory?(
+    params: URLSearchParams,
+  ): ReturnType<typeof import("./memory-explorer.js").browseMemory>;
   exportMemory(
     memoryId: string,
   ): ReturnType<typeof import("./memory-archive.js").exportMemoryArchive>;

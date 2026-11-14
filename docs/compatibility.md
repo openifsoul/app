@@ -21,6 +21,6 @@ and persistence checks do not establish reliable semantic reassessment.
 Hosted inference is bounded by configured per-user and shared quotas. Local
 cancellation does not guarantee that provider-side work or charges have stopped.
 
-Package release **0.5.0** preserves these compatible **0.4.0** format families.
+Package release **0.6.0** preserves these compatible **0.4.0** format families.
 Package versions identify shipped code; format identifiers validate serialized
 records and wire messages independently. Existing records are not relabeled.

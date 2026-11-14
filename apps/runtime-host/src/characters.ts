@@ -1,3 +1,4 @@
+import { browseMemory } from "./memory-explorer.js";
 import {
   exportMemoryArchive,
   previewMemoryArchive,
@@ -65,6 +66,12 @@ export function createCharacterWorkspace(
   };
   let busy = false;
   return {
+    browseMemory: (params) =>
+      browseMemory(
+        memory,
+        params,
+        options.bridgeSourcePolicy?.(params.get("memoryId") ?? ""),
+      ),
     exportMemory: (id) => exportMemoryArchive(memory, id),
     previewMemory: previewMemoryArchive,
     importMemory: (archive, expected) =>

@@ -1,35 +1,10 @@
 {
   "package": "@ifsoul/adapter-sdk",
-  "version": "0.5.0",
-  "archive": "release050-cc2c16233fb6/ifsoul-adapter-sdk-0.5.0.tgz",
-  "sha256": "cc2c16233fb69b665b675145557eefd702ff04f73bbea37402f1e95d37988748",
-  "baseCommit": "6c2a127f7e2b2ff045d486740f12996daa6d477d",
-  "sourceState": "uncommitted release candidate; not registry publication",
+  "version": "0.6.0",
+  "archive": "release060-2697f4c685f2/ifsoul-adapter-sdk-0.6.0.tgz",
+  "sha256": "2697f4c685f204c8888d06f4b5f7dc97775444f029222a3d491092712f1332cd",
+  "baseCommit": "544517fe2429824fd0f8c27495e0b8b966d8d7be",
   "sources": [
-    {
-      "path": "docs/behavior.md",
-      "sha256": "9fbb2f2735e2be307a12924cc087ecf9bc696da42e810109f2517f9e5a9408e2"
-    },
-    {
-      "path": "docs/group-scheduler.md",
-      "sha256": "5bdd74f52173968ac998f768f9163058f37fd19b179bac89c70a92fb2dc664f9"
-    },
-    {
-      "path": "docs/sessions.md",
-      "sha256": "ed9fa7f3622fe7a08f12777ef7a86d8fe12c8b9c60527ab62d690cb08ec7fe2d"
-    },
-    {
-      "path": "src/behavior.ts",
-      "sha256": "560ae78c5ec4ce4b813294206e6bead9296420af96b5970c65efd59392f7a62e"
-    },
-    {
-      "path": "src/scheduler.ts",
-      "sha256": "cc816651405eb590ca48483850c72d001d15579a3fc3dc79c04908d73dc32590"
-    },
-    {
-      "path": "src/session.ts",
-      "sha256": "873486a281c8df4e45ff0b7c33eef47facd1328799e4462c04c8f86c5d37b706"
-    },
     {
       "path": ".github/workflows/checks.yml",
       "sha256": "75f13e045c90617629611028821132cd50579d7f8ee2eace827da7e23afb012d"
@@ -48,7 +23,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "afbb58c984dff8999f284fd85d95d8b1dfde5c8bfa97ec56a01f4690d4cf37e6"
+      "sha256": "2e355cc009811acb70d4b930c00fd7a607873b996c08cbedbe22b3f25876cf03"
     },
     {
       "path": "SECURITY.md",
@@ -63,24 +38,36 @@
       "sha256": "841e1d9903208dc3ec7d114d9cff524b33d7efffbfb289030f9702bb4ef38995"
     },
     {
+      "path": "docs/behavior.md",
+      "sha256": "9fbb2f2735e2be307a12924cc087ecf9bc696da42e810109f2517f9e5a9408e2"
+    },
+    {
       "path": "docs/compatibility.md",
-      "sha256": "fdb6ae7ae056fa92426afac9f5d1477400deedcd0177709df804867bb819b2ea"
+      "sha256": "0043934e249da27f9263416131df767d2120c515273595f357517752b971baf1"
     },
     {
       "path": "docs/deployment.md",
       "sha256": "840b9bc8900f23db1d7a557aaa172f81ddd40f00b0c11c46c642242b662c327b"
     },
     {
+      "path": "docs/group-scheduler.md",
+      "sha256": "5bdd74f52173968ac998f768f9163058f37fd19b179bac89c70a92fb2dc664f9"
+    },
+    {
       "path": "docs/mineflayer-bridge.md",
-      "sha256": "181fdb1c3228a7e1ce215f1c07cd3cd7bd22ad7f4ad3ba19079ecbdbd19890c2"
+      "sha256": "2f0623a05577b04f8b8cfc8b1e4961137e3b476a5c8f8447d3ed37e3ca8e4ab6"
     },
     {
       "path": "docs/resource-budgets.md",
       "sha256": "0c81e3b46fc36afec3d1aa1b141668e8fa895ad60d457f507b280246a10742bd"
     },
     {
+      "path": "docs/sessions.md",
+      "sha256": "ed9fa7f3622fe7a08f12777ef7a86d8fe12c8b9c60527ab62d690cb08ec7fe2d"
+    },
+    {
       "path": "package.json",
-      "sha256": "d1ca71f0de8a2e0d1dccaf3b5bf3e99b6c041c6a839e55cb45ba58d0cb2bfbc0"
+      "sha256": "5683650c1f90b23e8fee81804ef77e84a87d73ffeddb12815db7109e9e0a330b"
     },
     {
       "path": "pnpm-lock.yaml",
@@ -88,11 +75,15 @@
     },
     {
       "path": "release.json",
-      "sha256": "ab28d7d1046a3f20eb9e2ab75748abc2f274c64049a04edcae9648ee6c05c7ea"
+      "sha256": "f65b8a5568b179224531311b17917f0578ba8d829314b11e91fb81f5f4726e63"
     },
     {
       "path": "scripts/check-version.mjs",
-      "sha256": "4f772f36de04f49041cf7ba7f6308000f0db9d4fa033e5adb0db216d23158c29"
+      "sha256": "0a55040da1be48c23c6d582d1b5a16d64b42db13acbc2b9d29bdc6f5ecac67cb"
+    },
+    {
+      "path": "src/behavior.ts",
+      "sha256": "560ae78c5ec4ce4b813294206e6bead9296420af96b5970c65efd59392f7a62e"
     },
     {
       "path": "src/bridge.ts",
@@ -112,11 +103,19 @@
     },
     {
       "path": "src/port.ts",
-      "sha256": "afe27963a617c4d7c271cc30dbd1ed31cb92b930edadfc0fbbb5787c0dc24281"
+      "sha256": "f652ed9f88888388dd93b51ea619822beab92eef2dfe0ebff739d999094bac29"
     },
     {
       "path": "src/resource-policy.ts",
       "sha256": "c79ec1054490c53bef3b9fd792807fe1586508e42ce7e1762666891e40bb1b55"
+    },
+    {
+      "path": "src/scheduler.ts",
+      "sha256": "cc816651405eb590ca48483850c72d001d15579a3fc3dc79c04908d73dc32590"
+    },
+    {
+      "path": "src/session.ts",
+      "sha256": "873486a281c8df4e45ff0b7c33eef47facd1328799e4462c04c8f86c5d37b706"
     },
     {
       "path": "tests/resource-policy.test.ts",
@@ -128,11 +127,11 @@
     },
     {
       "path": "tests/tooling/sdk-package.test.mjs",
-      "sha256": "0af95556c02df1cd26549f36190a8f42eabf41578cf0506bf78205bcf83d09fc"
+      "sha256": "716bc24e4d63b3ce705c0134c0d22f60109c730a740e0ae6df09ef781edfe9b6"
     },
     {
       "path": "tests/versioning.test.ts",
-      "sha256": "0897a563e1c6d22522691ff97d808eef6b0976b243ff05b794e5234eba080836"
+      "sha256": "4afc0ecbbd95d95b19e183f9d5c53ce95daa36b7ed8463e5c8b9b66777326cf0"
     },
     {
       "path": "tsconfig.build.json",

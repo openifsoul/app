@@ -54,6 +54,14 @@ export interface AppResourceConfiguration {
   };
   browserTimeoutMs?: number;
 }
+/** A conservative Desktop operating window for the installed Qwen3 8B tag. */
+export const desktopOllamaContexts = {
+  "qwen3:8b": {
+    windowTokens: 8192,
+    source: "operator",
+    estimate: { bytesPerToken: 1.5, overheadTokens: 128 },
+  },
+} satisfies Record<string, ContextConfiguration>;
 const objectKeys = (value: unknown, allowed: string[], layer: string) => {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new AppResourceError("configuration", layer, "object-required");

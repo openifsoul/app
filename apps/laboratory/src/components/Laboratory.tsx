@@ -175,8 +175,8 @@ export function Laboratory({
             New test
           </Button>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="grid gap-2">
+        <div className="app-field-row grid gap-4 sm:grid-cols-2">
+          <div className="app-form-field grid gap-2">
             <Label htmlFor="lab-list-memory">Memory history</Label>
             <OptionSelect
               id="lab-list-memory"
@@ -194,7 +194,7 @@ export function Laboratory({
               ))}
             </OptionSelect>
           </div>
-          <div className="grid gap-2">
+          <div className="app-form-field grid gap-2">
             <Label htmlFor="lab-request-search">Find a request</Label>
             <Input
               id="lab-request-search"
@@ -281,8 +281,8 @@ export function Laboratory({
           Back to requests
         </Button>
         <h2 className="text-lg font-medium">New synthetic test</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="grid gap-2">
+        <div className="app-field-row grid gap-4 sm:grid-cols-2">
+          <div className="app-form-field grid gap-2">
             <Label htmlFor="lab-test-profile">Character profile</Label>
             <OptionSelect
               id="lab-test-profile"
@@ -300,7 +300,7 @@ export function Laboratory({
               ))}
             </OptionSelect>
           </div>
-          <div className="grid gap-2">
+          <div className="app-form-field grid gap-2">
             <Label htmlFor="lab-test-memory">Memory history</Label>
             <OptionSelect
               id="lab-test-memory"

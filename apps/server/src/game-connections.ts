@@ -1,3 +1,9 @@
+import {
+  minecraftConnectors,
+  sameMinecraftTarget,
+  validMinecraftTarget,
+  type MinecraftTarget,
+} from "../../shared/src/minecraft-connectors.js";
 import { boundedJSON, secured } from "./security.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { PrivateStore, ProviderOption } from "./api.js";
@@ -11,6 +17,7 @@ export interface GamePairRequest {
   provider: ProviderSelection["provider"];
   model: string;
   consent: boolean;
+  minecraftTarget?: MinecraftTarget;
 }
 export interface GameBinding extends ProviderSelection {
   connectionId: string;
@@ -22,6 +29,7 @@ export interface GameBinding extends ProviderSelection {
   revision: number;
   expiresAt: number;
   revoked: boolean;
+  minecraftTarget?: MinecraftTarget;
   player?: { name: string; uuid: string };
   lastSeen?: number;
 }
@@ -111,6 +119,8 @@ export function createGameConnectionBroker(options: {
           row.revision < 1 ||
           !Number.isSafeInteger(row.expiresAt) ||
           typeof row.revoked !== "boolean" ||
+          (row.minecraftTarget !== undefined &&
+            !validMinecraftTarget(row.minecraftTarget)) ||
           typeof row.codeHash !== "string" ||
           !Number.isSafeInteger(row.codeExpiresAt) ||
           (row.tokenHash !== undefined && !/^[a-f0-9]{64}$/.test(row.tokenHash))
@@ -145,6 +155,17 @@ export function createGameConnectionBroker(options: {
       rows: { principalId: string; codeHash: string; expiresAt: number }[];
     };
   }
+  const inspectKey = (connectionId: string) =>
+    `game-inspection-v1:${connectionId}`;
+  const inspectionIdentity = (binding: GameBinding) =>
+    JSON.stringify([
+      binding.principalId,
+      binding.connectionId,
+      binding.memoryId,
+      binding.characterId,
+      binding.hostId,
+      binding.player?.uuid,
+    ]);
   const view = ({
     codeHash,
     codeExpiresAt,
@@ -227,7 +248,8 @@ export function createGameConnectionBroker(options: {
           existingConnectionId &&
           (!old ||
             old.characterId !== resolved.characterId ||
-            old.memoryId !== resolved.memoryId)
+            old.memoryId !== resolved.memoryId ||
+            !sameMinecraftTarget(old.minecraftTarget, resolved.minecraftTarget))
         )
           fail("unauthorized");
         if (
@@ -240,8 +262,11 @@ export function createGameConnectionBroker(options: {
                 "provider",
                 "model",
                 "character",
+                "minecraftTarget",
               ].includes(k),
           ) ||
+          (resolved.minecraftTarget !== undefined &&
+            !validMinecraftTarget(resolved.minecraftTarget)) ||
           !safe(resolved.characterId) ||
           !safe(resolved.memoryId) ||
           !resolved.character ||
@@ -295,12 +320,16 @@ export function createGameConnectionBroker(options: {
           revision: (old?.revision ?? 0) + 1,
           expiresAt: now() + 3600000,
           revoked: false,
-          ...(old?.player ? { player: old.player } : {}),
+          ...(old?.player && !resolved.minecraftTarget
+            ? { player: old.player }
+            : {}),
           codeHash: hash(code),
           codeExpiresAt: expiresAt,
         };
-        if (old) rows[rows.indexOf(old)] = row;
-        else rows.push(row);
+        if (old) {
+          options.store.delete(inspectKey(old.connectionId));
+          rows[rows.indexOf(old)] = row;
+        } else rows.push(row);
         return { connection: view(row), code, expiresAt };
       });
     },
@@ -309,12 +338,18 @@ export function createGameConnectionBroker(options: {
         rows.filter((r) => r.principalId === principalId).map(view),
       );
     },
-    redeem(code: string) {
+    redeem(code: string, serverConnectorOnly = false) {
       return run((rows) => {
         if (typeof code !== "string" || !/^[A-Za-z0-9_-]{24}$/.test(code))
           fail("unauthorized");
         const row = rows.find((r) => r.codeHash === hash(code));
-        if (!row || row.revoked || row.tokenHash) fail("unauthorized");
+        if (
+          !row ||
+          row.revoked ||
+          row.tokenHash ||
+          (serverConnectorOnly && !row.minecraftTarget)
+        )
+          fail("unauthorized");
         if (row.codeExpiresAt <= now()) fail("expired");
         const token = randomBytes(32).toString("base64url");
         row.tokenHash = hash(token);
@@ -325,7 +360,17 @@ export function createGameConnectionBroker(options: {
     authenticate(token: string) {
       return run((rows) => view(lookup(rows, token)));
     },
-    ready(token: string, player: { name: string; uuid: string }) {
+    ready(
+      token: string,
+      player: { name: string; uuid: string },
+      minecraft?: {
+        connector: string;
+        version: string;
+        loader: string;
+        upstream: string;
+        npcId: string;
+      },
+    ) {
       return run((rows) => {
         const r = lookup(rows, token);
         if (
@@ -335,6 +380,22 @@ export function createGameConnectionBroker(options: {
           !/^[a-f0-9-]{36}$/i.test(player.uuid)
         )
           fail("invalid");
+        const target = r.minecraftTarget;
+        if (target) {
+          const profile = minecraftConnectors[target.connector];
+          if (
+            !minecraft ||
+            typeof minecraft !== "object" ||
+            Object.keys(minecraft).length !== 5 ||
+            player.uuid !== target.playerId ||
+            minecraft.connector !== target.connector ||
+            minecraft.npcId !== target.npcId ||
+            minecraft.version !== profile.version ||
+            minecraft.loader !== profile.loader ||
+            minecraft.upstream !== profile.upstream
+          )
+            fail("unauthorized");
+        } else if (minecraft !== undefined) fail("unauthorized");
         if (
           r.player &&
           (r.player.uuid !== player.uuid || r.player.name !== player.name)
@@ -344,6 +405,35 @@ export function createGameConnectionBroker(options: {
         r.revision++;
         r.lastSeen = now();
         return view(r);
+      });
+    },
+    setInspection(token: string, allowed: boolean) {
+      return run((rows) => {
+        const row = lookup(rows, token);
+        if (!row.player) fail("unauthorized");
+        const key = inspectKey(row.connectionId);
+        if (allowed) options.store.set(key, inspectionIdentity(row));
+        else options.store.delete(key);
+      });
+    },
+    inspection(principalId: string, connectionId: string, memoryId?: string) {
+      return run((rows) => {
+        const row = rows.find(
+          (item) =>
+            item.principalId === principalId &&
+            item.connectionId === connectionId,
+        );
+        if (
+          !row ||
+          row.revoked ||
+          row.expiresAt <= now() ||
+          !row.player ||
+          (memoryId !== undefined && row.memoryId !== memoryId) ||
+          options.store.get(inspectKey(connectionId)) !==
+            inspectionIdentity(row)
+        )
+          fail("unauthorized");
+        return view(row);
       });
     },
     current(binding: GameBinding) {
@@ -370,6 +460,7 @@ export function createGameConnectionBroker(options: {
         );
         if (!r) fail("unauthorized");
         if (!r.revoked) {
+          options.store.delete(inspectKey(id));
           r.revoked = true;
           r.revision++;
         }
@@ -395,9 +486,12 @@ export async function resolveGamePair(
           "model",
           "consent",
           "connectionId",
+          "minecraftTarget",
         ].includes(k),
     ) ||
     input.consent !== true ||
+    (input.minecraftTarget !== undefined &&
+      !validMinecraftTarget(input.minecraftTarget)) ||
     !safe(input.characterId) ||
     !safe(input.memoryId) ||
     (input.connectionId !== undefined && !safe(input.connectionId))
@@ -418,6 +512,9 @@ export async function resolveGamePair(
     memoryId: input.memoryId,
     provider: input.provider,
     model: input.model,
+    ...(input.minecraftTarget
+      ? { minecraftTarget: input.minecraftTarget }
+      : {}),
     character: {
       id: character.characterId,
       name: character.profile.name,
@@ -435,11 +532,14 @@ export async function gameDeviceRequest(
     binding: GameBinding,
     body: Record<string, unknown>,
   ) => Promise<unknown>,
+  serverConnectorOnly = false,
 ) {
   const reply = (body: unknown, init?: ResponseInit) =>
     secured(Response.json(body, init));
   try {
     if (
+      (serverConnectorOnly &&
+        new URL(request.url).pathname.endsWith("/owner-proof")) ||
       request.method !== "POST" ||
       request.headers.has("origin") ||
       request.headers.has("cookie") ||
@@ -454,6 +554,7 @@ export async function gameDeviceRequest(
         "/api/game/device/dialogue",
         "/api/game/device/revoke",
         "/api/game/device/owner-proof",
+        "/api/game/device/history-consent",
       ].includes(path)
     )
       return new Response(null, { status: 404 });
@@ -464,13 +565,18 @@ export async function gameDeviceRequest(
       fail("invalid");
     if (new URL(request.url).pathname.endsWith("/redeem")) {
       if (Object.keys(body).some((k) => k !== "code")) fail("invalid");
-      return reply(broker.redeem(body.code));
+      return reply(broker.redeem(body.code, serverConnectorOnly));
     }
     const token =
       request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+    if (serverConnectorOnly && !broker.authenticate(token).minecraftTarget)
+      fail("unauthorized");
     if (new URL(request.url).pathname.endsWith("/ready")) {
-      if (Object.keys(body).some((k) => k !== "player")) fail("invalid");
-      return reply({ connection: broker.ready(token, body.player) });
+      if (Object.keys(body).some((k) => !["player", "minecraft"].includes(k)))
+        fail("invalid");
+      return reply({
+        connection: broker.ready(token, body.player, body.minecraft),
+      });
     }
     if (path === "/api/game/device/owner-proof") {
       if (Object.keys(body).some((k) => !["code", "connectionId"].includes(k)))
@@ -487,6 +593,15 @@ export async function gameDeviceRequest(
       return reply({ ok: true });
     }
     if (!binding.player) fail("unauthorized");
+    if (path === "/api/game/device/history-consent") {
+      if (
+        Object.keys(body).some((k) => k !== "allowed") ||
+        typeof body.allowed !== "boolean"
+      )
+        fail("invalid");
+      broker.setInspection(token, body.allowed);
+      return reply({ ok: true });
+    }
     if (
       !new URL(request.url).pathname.endsWith("/dialogue") ||
       Object.keys(body).some((k) => !["requestId", "text"].includes(k)) ||

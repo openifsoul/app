@@ -49,17 +49,7 @@ function owner(memory: MemoryPort, id: string) {
   return result.value;
 }
 export function activeBridgeEvents(memory: MemoryPort, id: string) {
-  const character = owner(memory, id);
-  if (!character) return [];
-  const result = memory.recall({
-    characterId: id,
-    audienceParticipantIds: [character.participantId],
-    environmentIds: ["browser-continuation"],
-    limit: 1000,
-    maxBytes: 1000000,
-  });
-  if (!result.ok) throw Error("Memory unavailable");
-  const chronological = result.value;
+  const chronological = storedBridgeEvents(memory, id);
   let reset = -1;
   chronological.forEach((e, i) => {
     if (e.eventType === "bridge-reset") reset = i;
@@ -73,9 +63,38 @@ export function activeBridgeEvents(memory: MemoryPort, id: string) {
 export function storedBridgeEvents(memory: MemoryPort, memoryId: string) {
   const character = owner(memory, memoryId);
   if (!character) return [];
+  const audience = [
+    character.participantId,
+    IDS.localParticipant,
+    "demo-visitor",
+  ];
+  if (memory.scan) {
+    const events: MemoryEvent[] = [];
+    let after: number | undefined;
+    let through: number | undefined;
+    let anchor: string | undefined;
+    do {
+      const page = memory.scan({
+        characterId: memoryId,
+        visibleParticipantIds: audience,
+        after,
+        through,
+        anchor,
+        limit: 128,
+        includeTotal: false,
+      });
+      if (!page.ok) throw Error("Memory unavailable");
+      for (const { event } of page.value.entries)
+        if (event.environmentId === "browser-continuation") events.push(event);
+      after = page.value.next;
+      through = page.value.through;
+      anchor = page.value.anchor;
+    } while (after !== undefined);
+    return events;
+  }
   const result = memory.recall({
     characterId: memoryId,
-    audienceParticipantIds: [character.participantId],
+    audienceParticipantIds: audience,
     environmentIds: ["browser-continuation"],
     limit: 1000,
     maxBytes: 1000000,
@@ -85,16 +104,25 @@ export function storedBridgeEvents(memory: MemoryPort, memoryId: string) {
 }
 export function inspectBridgeMemory(memory: MemoryPort, memoryId: string) {
   const all = storedBridgeEvents(memory, memoryId);
-  const active = activeBridgeEvents(memory, memoryId);
-  const checkpoint = all
+  let resetIndex = -1;
+  all.forEach((event, index) => {
+    if (event.eventType === "bridge-reset") resetIndex = index;
+  });
+  const eligible = all.slice(resetIndex + 1);
+  const checkpoint = eligible
     .filter((e) => e.eventType === "bridge-checkpoint")
     .at(-1);
+  const dialogues = new Map(
+    eligible
+      .filter((e) => e.eventType === "bridge-dialogue")
+      .map((e) => [e.recordedPayload.inputId, e] as const),
+  );
   return {
     memoryId,
     reflection: inspectReflectionMemory(memory, memoryId),
     capacity: BRIDGE_MEMORY_LIMITS.records,
     remainingWrites: null,
-    episodes: all
+    episodes: eligible
       .filter((e) => e.eventType === "bridge-episode")
       .map((e) => e.recordedPayload.entry as unknown as BridgeMemoryEntry),
     retention: {
@@ -105,19 +133,15 @@ export function inspectBridgeMemory(memory: MemoryPort, memoryId: string) {
       recentRecords: BRIDGE_MEMORY_LIMITS.records,
       episodeRecords: BRIDGE_MEMORY_LIMITS.episodes,
       policy:
-        "Highest-salience retained episode per world (reported outcomes, then attributed actions), oldest on ties; then newest episodes. Exact omitted sources cannot be reconstructed.",
+        "Saved originals remain until explicit deletion. Prompt projections are bounded; older legacy episodes may lack their originals.",
       retryHorizon:
-        "Retained raw receipts and episode request digests; IDs whose episodes also expire may be accepted again.",
+        "Original request receipts are retained. Earlier legacy episodes may retain only a source digest.",
     },
-    entries: active
+    entries: eligible
       .filter((e) => e.eventType === "bridge-evidence")
       .map((e) => {
         const entry = e.recordedPayload.entry as unknown as BridgeMemoryEntry;
-        const dialogue = active.find(
-          (d) =>
-            d.eventType === "bridge-dialogue" &&
-            d.recordedPayload.inputId === entry.id,
-        );
+        const dialogue = dialogues.get(entry.id);
         return dialogue
           ? {
               ...entry,
@@ -180,209 +204,64 @@ function salience(entry: BridgeMemoryEntry) {
     return 0;
   }
 }
-/** Deterministic extractive view. Original trust and historical actor identity
- * survive; no model inference or subjective interpretation becomes a fact. */
-function derive(
-  entry: BridgeMemoryEntry,
-  recordedAt: string,
-): BridgeMemoryEntry {
-  const data = JSON.parse(entry.summary);
-  const reports = data.browserReports ?? [];
-  const summary = JSON.stringify({
-    ...data,
-    browserContext: String(data.browserContext ?? "").slice(0, 160),
-    browserReports: reports,
-    omittedSourceReports: 0,
-  });
-  const { assistantDialogue: _speech, ...source } = entry;
-  return {
-    ...source,
-    id: `episode-${hash(entry.id)}`,
-    summary,
-    derived: {
-      algorithm: "bridge-extract-v1",
-      sources: [
-        {
-          id: entry.id,
-          recordedAt,
-          digest: createHash("sha256").update(canonical(entry)).digest("hex"),
-        },
-      ],
-      losses: [
-        "Generated speech excluded; browser context limited to 160 characters; all ingested reports and their attribution retained. Full raw source expires after consolidation.",
-      ],
-    },
-  };
-}
-function compactBridge(memory: MemoryPort, memoryId: string, forget = false) {
+function forgetBridge(memory: MemoryPort, memoryId: string) {
   const all = storedBridgeEvents(memory, memoryId);
   if (!all.length) return;
   if (!memory.compact)
-    throw Error(
-      "memory-retention-unsupported: storage adapter cannot consolidate",
-    );
-  const raw = activeBridgeEvents(memory, memoryId).filter(
-    (e) => e.eventType === "bridge-evidence",
+    throw Error("Storage adapter does not support explicit forget");
+  const marker = bridgeMemoryEvent(
+    memory,
+    memoryId,
+    `bridge-reset-${crypto.randomUUID()}`,
+    "bridge-reset",
+    { kind: "bridge-reset", forgetFence: true },
   );
-  const selected = forget
-    ? raw
-    : raw.slice(0, BRIDGE_MEMORY_LIMITS.consolidationBatch);
-  const sourceIds = new Set(
-    selected.flatMap((e) => [
-      e.memoryId,
-      String((e.recordedPayload.entry as unknown as BridgeMemoryEntry).id),
-    ]),
-  );
-  let resetIndex = -1;
-  all.forEach((e, index) => {
-    if (e.eventType === "bridge-reset") resetIndex = index;
-  });
-  const expired = all.slice(0, resetIndex + 1);
-  const expiredIds = new Set(expired.map((e) => e.memoryId));
-  const priorEpisodes = all.filter(
-    (e, index) => index > resetIndex && e.eventType === "bridge-episode",
-  );
-  const priorCheckpoint = all
-    .filter((e) => e.eventType === "bridge-checkpoint")
-    .at(-1);
-  let episodes = forget
-    ? []
-    : [
-        ...priorEpisodes.map(
-          (e) => e.recordedPayload.entry as unknown as BridgeMemoryEntry,
-        ),
-        ...selected.map((e) =>
-          derive(
-            e.recordedPayload.entry as unknown as BridgeMemoryEntry,
-            e.recordedAt,
-          ),
-        ),
-      ];
-  const first = new Map<string, BridgeMemoryEntry>();
-  for (const entry of episodes)
-    if (
-      !first.has(entry.hostId) ||
-      salience(entry) > salience(first.get(entry.hostId)!)
-    )
-      first.set(entry.hostId, entry);
-  // At most 12 worlds retain their most substantive episode. New worlds displace the oldest world
-  // only when that explicit bound is exceeded, visible in droppedEpisodes.
-  const representatives = [...first.values()].slice(-12);
-  const retainedIds = new Set(representatives.map((e) => e.id));
-  for (const entry of [...episodes].reverse()) {
-    if (retainedIds.size >= BRIDGE_MEMORY_LIMITS.episodes) break;
-    retainedIds.add(entry.id);
-  }
-  const dropped = episodes.length - retainedIds.size;
-  episodes = episodes.filter((e) => retainedIds.has(e.id));
-  const remove = forget
-    ? all
-    : all.filter(
-        (e) =>
-          expiredIds.has(e.memoryId) ||
-          e.eventType === "bridge-episode" ||
-          e.eventType === "bridge-checkpoint" ||
-          e.eventType === "bridge-reset" ||
-          sourceIds.has(e.memoryId) ||
-          (e.eventType === "bridge-dialogue" &&
-            sourceIds.has(String(e.recordedPayload.inputId))),
-      );
-  const exchangeIds: string[] = [];
-  for (const e of forget ? all : [...selected, ...expired]) {
-    if (e.eventType !== "bridge-evidence") continue;
-    const identity = e.memoryId;
-    for (const id of [
-      identity,
-      identity.replace("bridge-input-", "bridge-dialogue-"),
-    ]) {
-      const found = memory.getExchange(id);
-      if (!found.ok) throw Error("Memory unavailable");
-      if (found.value) {
-        const expectedCategory =
-          id === identity ? "bridge-input" : "bridge-dialogue";
-        if (
-          found.value.characterId !== memoryId ||
-          found.value.category !== expectedCategory
-        )
-          throw Error("Bridge receipt ownership conflict");
-        exchangeIds.push(id);
+  // The first atomic chunk writes the fence. Later chunks clear older bytes.
+  for (let start = 0; start < all.length; start += 200) {
+    const selected = all.slice(start, start + 200);
+    const exchangeIds: string[] = [];
+    for (const event of selected) {
+      if (event.eventType !== "bridge-evidence") continue;
+      for (const id of [
+        event.memoryId,
+        event.memoryId.replace("bridge-input-", "bridge-dialogue-"),
+      ]) {
+        const found = memory.getExchange(id);
+        if (!found.ok) throw Error("Memory unavailable");
+        if (found.value) {
+          if (
+            found.value.characterId !== memoryId ||
+            found.value.category !==
+              (id === event.memoryId ? "bridge-input" : "bridge-dialogue")
+          )
+            throw Error("Bridge receipt ownership conflict");
+          exchangeIds.push(id);
+        }
       }
     }
+    const saved = memory.compact({
+      characterId: memoryId,
+      environmentId: "browser-continuation",
+      scope: selected[0]!.scope,
+      eventIds: selected.map((event) => event.memoryId),
+      exchangeIds,
+      events: start === 0 ? [marker] : [],
+      exchanges: [],
+    });
+    if (!saved.ok)
+      throw Error(
+        "Could not finish forgetting this memory. Retry to remove the remaining records.",
+      );
   }
-  // Remove the old lifetime-budget receipts on first retention. No user data
-  // or paid-usage records are touched; these IDs belong to this owner only.
-  for (let i = 0; i < 256; i++) {
-    const id = `bridge-budget-${hash(memoryId)}-${i}`;
-    const found = memory.getExchange(id);
-    if (!found.ok) throw Error("Memory unavailable");
-    if (found.value) {
-      if (
-        found.value.characterId !== memoryId ||
-        found.value.category !== "bridge-storage-budget"
-      )
-        throw Error("Bridge receipt ownership conflict");
-      exchangeIds.push(id);
-    } else break;
-  }
-  const checkpointId = `bridge-checkpoint-${crypto.randomUUID()}`;
-  const replacement = episodes.map((entry) =>
-    bridgeMemoryEvent(
-      memory,
-      memoryId,
-      `bridge-episode-${hash(memoryId + ":" + entry.id)}`,
-      "bridge-episode",
-      {
-        kind: "bridge-episode",
-        entry,
-      },
-    ),
-  );
-  if (!forget)
-    replacement.push(
-      bridgeMemoryEvent(memory, memoryId, checkpointId, "bridge-checkpoint", {
-        kind: "bridge-checkpoint",
-        sourceRecordsPruned:
-          Number(priorCheckpoint?.recordedPayload.sourceRecordsPruned ?? 0) +
-          selected.length,
-        droppedEpisodes:
-          Number(priorCheckpoint?.recordedPayload.droppedEpisodes ?? 0) +
-          Math.max(0, dropped),
-      }),
-    );
-  const saved = memory.compact({
-    characterId: memoryId,
-    environmentId: "browser-continuation",
-    scope: all[0]!.scope,
-    eventIds: remove.map((e) => e.memoryId),
-    exchangeIds: [...new Set(exchangeIds)],
-    events: replacement,
-    exchanges: [],
-  });
-  if (!saved.ok)
-    throw Error("Memory consolidation failed; original evidence retained");
 }
-function commitBounded(
-  memory: MemoryPort,
-  memoryId: string,
-  batch: Parameters<MemoryPort["commit"]>[0],
-) {
-  const size = () =>
-    [...storedBridgeEvents(memory, memoryId), ...batch.events].reduce(
-      (sum, e) => sum + Buffer.byteLength(JSON.stringify(e)),
-      0,
-    );
-  for (let attempt = 0; size() > 900000 && attempt < 6; attempt++) {
-    const before = size();
-    compactBridge(memory, memoryId);
-    if (size() >= before) break;
-  }
-  if (size() > 900000)
-    throw Error("memory-capacity: bounded retention byte budget reached");
-  return memory.commit(batch);
+export function bridgeForgetGeneration(memory: MemoryPort, memoryId: string) {
+  return storedBridgeEvents(memory, memoryId)
+    .filter((event) => event.eventType === "bridge-reset")
+    .at(-1)?.memoryId;
 }
 export function resetBridgeMemory(memory: MemoryPort, memoryId: string) {
   if (!owner(memory, memoryId)) return;
-  compactBridge(memory, memoryId, true);
+  forgetBridge(memory, memoryId);
 }
 export function recordBridgeRequest(
   memory: MemoryPort,
@@ -397,9 +276,6 @@ export function recordBridgeRequest(
     historyEntries > 128
   )
     throw new RangeError("Invalid retained report window");
-  const prior = activeBridgeEvents(memory, memoryId).filter(
-    (e) => e.eventType === "bridge-evidence",
-  );
   const identity = `bridge-input-${hash(memoryId + ":" + request.requestId)}`;
   const previous = memory.getExchange(identity);
   if (!previous.ok) throw Error("Memory unavailable");
@@ -424,8 +300,7 @@ export function recordBridgeRequest(
       throw Error("Request conflict: retained episode source differs");
     return; // Exact source already consolidated; never resurrect expired raw IDs.
   }
-  const last = prior.at(-1)?.recordedPayload.entry as unknown as
-    BridgeMemoryEntry | undefined;
+  const last = retained.entries.at(-1);
   const previousHost = last?.hostId;
   const reported = new Set(
     retainedEntries.flatMap((entry) => {
@@ -443,11 +318,13 @@ export function recordBridgeRequest(
     request.history.every((h) => reported.has(h.id))
   )
     return;
-  if (prior.length >= BRIDGE_MEMORY_LIMITS.records)
-    compactBridge(memory, memoryId);
   const entry: BridgeMemoryEntry = {
     id: identity,
-    sequence: Math.max(0, ...retainedEntries.map((e) => e.sequence ?? 0)) + 1,
+    sequence:
+      retainedEntries.reduce(
+        (latest, e) => Math.max(latest, e.sequence ?? 0),
+        0,
+      ) + 1,
     requestDigest: createHash("sha256")
       .update(canonical(request))
       .digest("hex"),
@@ -464,15 +341,8 @@ export function recordBridgeRequest(
         memoryId,
         request.character.id,
       ),
-      browserContext: request.context.slice(0, 2000),
-      ...(request.context.length > 2000
-        ? { omittedContextCharacters: request.context.length - 2000 }
-        : {}),
-      ...(request.history.length > historyEntries
-        ? { omittedInputReports: request.history.length - historyEntries }
-        : {}),
+      browserContext: request.context,
       browserReports: request.history
-        .slice(-historyEntries)
         .filter((h) => !reported.has(h.id))
         .map((h) => ({
           id: h.id,
@@ -489,7 +359,7 @@ export function recordBridgeRequest(
               }
             : {}),
           ...(h.reportedClaims ? { reportedClaims: h.reportedClaims } : {}),
-          summary: h.summary.slice(0, 600),
+          summary: h.summary,
           actor: h.actor ?? "unknown",
           observer: h.observer ?? "unknown",
           recipient: h.recipient ?? "unknown",
@@ -515,7 +385,7 @@ export function recordBridgeRequest(
         "A request reached this host; no completed gameplay is asserted.",
     },
   };
-  const saved = commitBounded(memory, memoryId, {
+  const saved = memory.commit({
     exchanges: [
       {
         id: identity,
@@ -540,25 +410,84 @@ export function recordBridgeRequest(
   });
   if (!saved.ok) throw Error("Memory unavailable");
 }
+/** Token overlap ranks remembered wording without using inferred identities or embeddings. */
+export function memoryRelevance(question: string, text: string): number {
+  const words = (value: string) =>
+    value
+      .normalize("NFKC")
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+  const terms = new Set(words(question));
+  return [...new Set(words(text))].filter((term) => terms.has(term)).length;
+}
+
+/** Host and source decisions are supplied by trusted composition, never request text. */
+export type BridgeSourceAccess = (world: string, sourceId: string) => boolean;
+
+export function visibleBridgeEntries(
+  entries: BridgeMemoryEntry[],
+  access?: BridgeSourceAccess,
+): BridgeMemoryEntry[] {
+  if (!access) return entries;
+  return entries
+    .filter((entry) => {
+      if (!entry.hostId || !access(entry.hostId, entry.id)) return false;
+      try {
+        const detail = JSON.parse(entry.summary);
+        // A composite can repeat a report in generated speech or its summary.
+        // Withhold the entire composite if any constituent is inaccessible.
+        return (
+          typeof detail.perspectiveCharacterId === "string" &&
+          (detail.browserReports ?? []).every(
+            (report: { hostId?: string; id?: string }) =>
+              typeof report.hostId === "string" &&
+              typeof report.id === "string" &&
+              access(report.hostId, report.id) &&
+              access(
+                report.hostId,
+                `source-${hash(canonical([report.hostId, report.id])).slice(0, 24)}`,
+              ),
+          ) &&
+          (entry.derived?.sources ?? []).every((source) =>
+            access(entry.hostId, source.id),
+          )
+        );
+      } catch {
+        return false;
+      }
+    })
+    .map(({ assistantDialogue: _dialogue, ...entry }) => entry);
+}
+
 export function recallBridgeMemory(
   memory: MemoryPort,
   memoryId: string,
   question: string,
+  access?: BridgeSourceAccess,
 ) {
   const snapshot = inspectBridgeMemory(memory, memoryId);
-  const all = [...snapshot.episodes, ...snapshot.entries];
-  const terms = new Set(
-    question.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [],
+  const all = visibleBridgeEntries(
+    [...snapshot.episodes, ...snapshot.entries],
+    access,
   );
   const ranked = all
     .map((entry, index) => ({
       entry,
       index,
-      score: [...terms].filter((t) =>
-        (entry.hostId + " " + entry.summary).toLowerCase().includes(t),
-      ).length,
+      score: memoryRelevance(question, entry.hostId + " " + entry.summary),
     }))
     .sort((a, b) => b.score - a.score || b.index - a.index);
+  const strongest = ranked.find(
+    ({ entry, score }) =>
+      score > 0 &&
+      (() => {
+        try {
+          return JSON.parse(entry.summary).browserContext !== question;
+        } catch {
+          return true;
+        }
+      })(),
+  );
   const representatives = [...new Set(all.map((e) => e.hostId))].map(
     (host) =>
       all
@@ -601,7 +530,11 @@ export function recallBridgeMemory(
     }
     return entry;
   });
-  const candidates = [...covered, ...ranked.map((r) => r.entry)];
+  const candidates = [
+    ...(strongest ? [strongest.entry] : []),
+    ...covered,
+    ...ranked.map((r) => r.entry),
+  ];
   const selected: BridgeMemoryEntry[] = [];
   let bytes = 0;
   for (const entry of candidates) {
@@ -614,10 +547,22 @@ export function recallBridgeMemory(
   }
   return {
     visitedHosts: [...new Set(all.map((e) => e.hostId))],
+    ...(strongest ? { relevantEntryId: strongest.entry.id } : {}),
     retention: snapshot.retention,
     reflection: {
       status: snapshot.reflection.status,
       facts: snapshot.reflection.facts
+        .filter(
+          (item) =>
+            !access ||
+            (item.sources.length > 0 &&
+              [
+                ...item.sources,
+                ...item.history.flatMap((revision) => revision.sources),
+              ].every(
+                (source) => !!source.hostId && access(source.hostId, source.id),
+              )),
+        )
         .slice(-4)
         .map(({ history, sources, ...item }) => ({
           ...item,
@@ -629,6 +574,17 @@ export function recallBridgeMemory(
           })),
         })),
       relationships: snapshot.reflection.relationships
+        .filter(
+          (item) =>
+            !access ||
+            (item.sources.length > 0 &&
+              [
+                ...item.sources,
+                ...item.history.flatMap((revision) => revision.sources),
+              ].every(
+                (source) => !!source.hostId && access(source.hostId, source.id),
+              )),
+        )
         .slice(-4)
         .map(({ history, sources, ...item }) => ({
           ...item,
@@ -660,7 +616,7 @@ export function recordBridgeSpeech(
   const previous = memory.getExchange(id);
   if (!previous.ok) throw Error("Memory unavailable");
   if (previous.value) return;
-  const saved = commitBounded(memory, memoryId, {
+  const saved = memory.commit({
     exchanges: [
       {
         id,
@@ -700,6 +656,8 @@ export function projectBridgeRecallForModel(
     Object.values(object).forEach(collectCitations);
   };
   collectCitations(recall.reflection);
+  if (typeof recall.relevantEntryId === "string")
+    citedIds.add(recall.relevantEntryId);
   const reports: Record<string, unknown>[] = [];
   const reportRefs = new Map<string, string>();
   const entries = (Array.isArray(recall.entries) ? recall.entries : []).map(
@@ -779,6 +737,7 @@ export function latestBridgeUserMessage(
   memory: MemoryPort,
   memoryId: string,
   characterId: string,
+  access?: BridgeSourceAccess,
 ): string {
   const character = owner(memory, memoryId);
   if (!character) return "";
@@ -795,7 +754,10 @@ export function latestBridgeUserMessage(
     ]),
   );
   const candidates: { text: string; time: number; sequence: number }[] = [];
-  for (const entry of [...snapshot.episodes, ...snapshot.entries]) {
+  for (const entry of visibleBridgeEntries(
+    [...snapshot.episodes, ...snapshot.entries],
+    access,
+  )) {
     if (entry.kind !== "chat") continue;
     try {
       const detail = JSON.parse(entry.summary);

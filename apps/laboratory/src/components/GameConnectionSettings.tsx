@@ -1,3 +1,4 @@
+import { desktopBridge } from "../lib/desktop";
 import { OptionSelect, SelectItem } from "./ui/select";
 import { useEffect, useRef, useState } from "react";
 import type { ProviderOption } from "../lib/api";
@@ -126,18 +127,28 @@ export function GameConnectionSettings({
     ),
     otherService = Boolean(companion?.requiresServiceSwitch || otherOwner),
     localBusy = pairing || configuring || Boolean(action);
-  const portNumber = Number(port),
-    serverValid =
-      host.trim().length > 0 &&
-      host.trim().length <= 253 &&
-      !/[\s\\/?#@]/.test(host) &&
-      /^\d{1,5}$/.test(port) &&
-      Number.isInteger(portNumber) &&
-      portNumber > 0 &&
-      portNumber <= 65535 &&
-      minecraftName.test(botName) &&
-      minecraftName.test(playerName) &&
-      botName !== playerName;
+  const [serverFieldsTouched, setServerFieldsTouched] = useState({
+    host: false,
+    port: false,
+  });
+  const portNumber = Number(port);
+  const validHost =
+    host.trim().length > 0 &&
+    host.trim().length <= 253 &&
+    !/[\s\\/?#@]/.test(host);
+  const validPort =
+    /^\d{1,5}$/.test(port) &&
+    Number.isInteger(portNumber) &&
+    portNumber > 0 &&
+    portNumber <= 65535;
+  const serverValid =
+    validHost &&
+    validPort &&
+    minecraftName.test(botName) &&
+    minecraftName.test(playerName) &&
+    botName !== playerName;
+  const hostError = serverFieldsTouched.host && !validHost;
+  const portError = serverFieldsTouched.port && !validPort;
   const formValid =
     serverValid &&
     trusted &&
@@ -309,7 +320,9 @@ export function GameConnectionSettings({
         controlToken.current = null;
         setControlExpires(0);
         setCompanionFailure(
-          "The companion control session expired. Pair again on its local page; its saved game connection remains intact.",
+          desktopBridge()
+            ? "The companion control session expired. Start and approve it again to manage your saved connection."
+            : "The companion control session expired. Pair again on its local page; its saved game connection remains intact.",
         );
       },
       Math.max(0, Math.min(remaining, 2147483647)),
@@ -322,7 +335,8 @@ export function GameConnectionSettings({
     return () => clearInterval(timer);
   }, [hasControl, companion?.running, localBusy]);
   async function pair() {
-    if (!pairCode.trim() || localBusy) return;
+    const desktop = desktopBridge();
+    if ((!desktop && !pairCode.trim()) || localBusy) return;
     pauseStatusReads();
     localController.current?.abort();
     const current = new AbortController();
@@ -331,7 +345,20 @@ export function GameConnectionSettings({
     setCompanionFailure(null);
     setNotice(null);
     try {
-      const grant = await pairCompanion(pairCode.trim(), current.signal);
+      const approval = desktop ? await desktop.approveMinecraft() : undefined;
+      if (approval && (!approval.ok || !approval.expiresAt)) {
+        controlToken.current = null;
+        setControlExpires(0);
+        setCompanion(null);
+        if (!current.signal.aborted)
+          setCompanionFailure(
+            "Companion approval did not complete. Try again, or close other apps using the companion port.",
+          );
+        return;
+      }
+      const grant = approval?.expiresAt
+        ? { controlToken: "desktop", expiresAt: approval.expiresAt }
+        : await pairCompanion(pairCode.trim(), current.signal);
       if (current.signal.aborted) return;
       controlToken.current = grant.controlToken;
       setControlExpires(grant.expiresAt);
@@ -522,90 +549,105 @@ export function GameConnectionSettings({
           <h3 id="game-companion-title" className="font-medium">
             1. Pair the local companion
           </h3>
-          <p className="text-sm text-muted-foreground">
-            Use the companion source supplied by your service owner, or get the
-            bridge repository below. Run the installation commands once in a
-            terminal on this computer, then keep the companion running.
-          </p>
-          <Button
-            asChild
-            variant="outline"
-            className="min-h-11 justify-self-start"
-          >
-            <a
-              href="https://github.com/openifsoul/bridge-minecraft"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Get Minecraft bridge source
-              <ArrowUpRight />
-            </a>
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Prerequisites: Node.js 22.18–24 and pnpm 10.15.0. If you received a
-            prepared source folder, open that folder and run the last two
-            commands.
-          </p>
-          <pre className="overflow-x-auto rounded-lg border p-3 text-xs">
-            <code>
-              {
-                "git clone https://github.com/openifsoul/bridge-minecraft.git\ncd bridge-minecraft\npnpm install --frozen-lockfile\npnpm companion"
-              }
-            </code>
-          </pre>
-          <p className="text-sm text-muted-foreground">
-            Open the local consent page, enter and approve this exact App
-            origin, then copy its one-use code here. The browser does not
-            install the companion.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button asChild variant="outline" className="min-h-11">
-              <a
-                href={COMPANION_ORIGIN + "/"}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open companion consent page
-                <ArrowUpRight />
-              </a>
-            </Button>
-            <Button
-              variant="ghost"
-              className="min-h-11"
-              onClick={() => void copyOrigin()}
-            >
-              <Copy />
-              Copy App origin
-            </Button>
-          </div>
-          <code className="break-all rounded-md border p-3 text-xs">
-            {window.location.origin}
-          </code>
-          <div className="grid gap-2">
-            <Label htmlFor="game-companion-code">Companion pairing code</Label>
-            <Input
-              id="game-companion-code"
-              className="min-h-11"
-              value={pairCode}
-              maxLength={128}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setPairCode(e.target.value)}
-              disabled={localBusy}
-            />
-            <p className="text-xs text-muted-foreground">
-              Codes expire after five minutes and work once. Control access
-              stays in this tab only.
+          {desktopBridge() ? (
+            <p className="text-sm text-muted-foreground">
+              Start the Minecraft companion included with IfSoul Desktop, then
+              approve access in the desktop dialog.
             </p>
-          </div>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Use the companion source supplied by your service owner, or get
+                the bridge repository below. Run the installation commands once
+                in a terminal on this computer, then keep the companion running.
+              </p>
+              <Button
+                asChild
+                variant="outline"
+                className="min-h-11 justify-self-start"
+              >
+                <a
+                  href="https://github.com/openifsoul/bridge-minecraft"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Get Minecraft bridge source
+                  <ArrowUpRight />
+                </a>
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Prerequisites: Node.js 22.18–24 and pnpm 10.15.0. If you
+                received a prepared source folder, open that folder and run the
+                last two commands.
+              </p>
+              <pre className="overflow-x-auto rounded-lg border p-3 text-xs">
+                <code>
+                  {
+                    "git clone https://github.com/openifsoul/bridge-minecraft.git\ncd bridge-minecraft\npnpm install --frozen-lockfile\npnpm companion"
+                  }
+                </code>
+              </pre>
+              <p className="text-sm text-muted-foreground">
+                Open the local consent page, enter and approve this exact App
+                origin, then copy its one-use code here. The browser does not
+                install the companion.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button asChild variant="outline" className="min-h-11">
+                  <a
+                    href={COMPANION_ORIGIN + "/"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open companion consent page
+                    <ArrowUpRight />
+                  </a>
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="min-h-11"
+                  onClick={() => void copyOrigin()}
+                >
+                  <Copy />
+                  Copy App origin
+                </Button>
+              </div>
+              <code className="break-all rounded-md border p-3 text-xs">
+                {window.location.origin}
+              </code>
+              <div className="grid gap-2">
+                <Label htmlFor="game-companion-code">
+                  Companion pairing code
+                </Label>
+                <Input
+                  id="game-companion-code"
+                  className="min-h-11"
+                  value={pairCode}
+                  maxLength={128}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => setPairCode(e.target.value)}
+                  disabled={localBusy}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Codes expire after five minutes and work once. Control access
+                  stays in this tab only.
+                </p>
+              </div>
+            </>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <Button
               className="min-h-11"
-              disabled={!pairCode.trim() || localBusy}
+              disabled={(!desktopBridge() && !pairCode.trim()) || localBusy}
               onClick={() => void pair()}
             >
               {pairing ? <LoaderCircle className="animate-spin" /> : <Unplug />}
-              {pairing ? "Pairing…" : "Pair companion"}
+              {pairing
+                ? "Pairing…"
+                : desktopBridge()
+                  ? "Start and approve companion"
+                  : "Pair companion"}
             </Button>
             {hasControl && (
               <Badge variant="outline">
@@ -620,41 +662,73 @@ export function GameConnectionSettings({
             </p>
           )}
         </section>
-        <section className="grid gap-4" aria-labelledby="game-server-title">
+        <section
+          className="app-field-section grid gap-4"
+          aria-labelledby="game-server-title"
+        >
           <h3 id="game-server-title" className="font-medium">
             2. Choose the Minecraft server
           </h3>
-          <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
-            <div className="grid gap-2">
+          <div className="app-field-row grid gap-4 sm:grid-cols-[2fr_1fr]">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="game-minecraft-host">Minecraft host *</Label>
               <Input
                 id="game-minecraft-host"
                 className="min-h-11"
                 value={host}
+                aria-invalid={hostError || undefined}
+                aria-describedby="game-host-feedback"
+                onBlur={() =>
+                  setServerFieldsTouched((current) => ({
+                    ...current,
+                    host: true,
+                  }))
+                }
                 maxLength={253}
                 onChange={(e) => setHost(e.target.value)}
                 disabled={localBusy}
               />
-              <p className="text-xs text-muted-foreground">
-                Server host only; this is independent from the App service
-                address.
+              <p
+                id="game-host-feedback"
+                className={
+                  hostError
+                    ? "text-xs text-destructive"
+                    : "text-xs text-muted-foreground"
+                }
+              >
+                {hostError
+                  ? "Enter a host name or IP address without spaces, a URL or a port."
+                  : "Use the Minecraft server address."}
               </p>
             </div>
-            <div className="grid gap-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="game-minecraft-port">Minecraft port *</Label>
               <Input
                 id="game-minecraft-port"
                 className="min-h-11"
                 value={port}
+                aria-invalid={portError || undefined}
+                aria-describedby={portError ? "game-port-error" : undefined}
+                onBlur={() =>
+                  setServerFieldsTouched((current) => ({
+                    ...current,
+                    port: true,
+                  }))
+                }
                 maxLength={5}
                 inputMode="numeric"
                 onChange={(e) => setPort(e.target.value)}
                 disabled={localBusy}
               />
+              {portError && (
+                <p id="game-port-error" className="text-xs text-destructive">
+                  Enter a port from 1 to 65535.
+                </p>
+              )}
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
+          <div className="app-field-row grid gap-4 sm:grid-cols-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="game-bot-name">Bot name *</Label>
               <Input
                 id="game-bot-name"
@@ -665,7 +739,7 @@ export function GameConnectionSettings({
                 disabled={localBusy}
               />
             </div>
-            <div className="grid gap-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="game-player-name">Your player name *</Label>
               <Input
                 id="game-player-name"
@@ -718,7 +792,10 @@ export function GameConnectionSettings({
             bot joining it.
           </label>
         </section>
-        <section className="grid gap-4" aria-labelledby="game-service-title">
+        <section
+          className="app-field-section grid gap-4"
+          aria-labelledby="game-service-title"
+        >
           <h3 id="game-service-title" className="font-medium">
             3. Choose the character, memory and model
           </h3>
@@ -755,8 +832,8 @@ export function GameConnectionSettings({
               configuring the game connection.
             </p>
           )}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
+          <div className="app-field-row grid gap-4 sm:grid-cols-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="game-character">Character profile *</Label>
               <OptionSelect
                 id="game-character"
@@ -773,7 +850,7 @@ export function GameConnectionSettings({
                 ))}
               </OptionSelect>
             </div>
-            <div className="grid gap-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="game-memory">Owned memory *</Label>
               <OptionSelect
                 id="game-memory"
@@ -790,7 +867,7 @@ export function GameConnectionSettings({
                 ))}
               </OptionSelect>
             </div>
-            <div className="grid gap-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="game-provider">Available provider *</Label>
               <OptionSelect
                 id="game-provider"
@@ -812,7 +889,7 @@ export function GameConnectionSettings({
                 ))}
               </OptionSelect>
             </div>
-            <div className="grid gap-2">
+            <div className="app-form-field grid gap-2">
               <Label htmlFor="game-model">Model *</Label>
               <OptionSelect
                 id="game-model"

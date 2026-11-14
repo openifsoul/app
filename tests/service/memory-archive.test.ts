@@ -59,7 +59,7 @@ const request = (owner: string, character: string, n = 0): BridgeRequest => ({
   ],
 });
 
-test("permitted archive round-trip preserves exact report provenance and relationships through reopen, continued chat and isolated retention", async () => {
+test("permitted archive round-trip preserves exact report provenance and relationships through reopen, continued chat and isolated durable admission", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ifsoul-archive-"));
   let memory = value(openSQLiteMemory(join(dir, "test.sqlite")));
   try {
@@ -197,8 +197,12 @@ test("permitted archive round-trip preserves exact report provenance and relatio
         second.memoryId,
         request(second.memoryId, second.characterId, n),
       );
-    assert.ok(inspectBridgeMemory(memory, imported.memoryId).episodes.length);
-    assert.ok(inspectBridgeMemory(memory, second.memoryId).episodes.length);
+    assert.ok(
+      inspectBridgeMemory(memory, imported.memoryId).entries.length > 100,
+    );
+    assert.ok(
+      inspectBridgeMemory(memory, second.memoryId).entries.length > 100,
+    );
     assert.deepEqual(
       inspectBridgeMemory(memory, fresh.memoryId).entries,
       original.entries,
@@ -208,7 +212,7 @@ test("permitted archive round-trip preserves exact report provenance and relatio
     );
     assert.ok(
       episodeArchive.payload.events.some(
-        (e) => e.eventType === "bridge-episode",
+        (e) => e.eventType === "bridge-evidence",
       ),
     );
     assert.equal(episodeArchive.payload.characters.length, 1);
@@ -220,11 +224,16 @@ test("permitted archive round-trip preserves exact report provenance and relatio
       importMemoryArchive(memory, episodeArchive, episodeArchive.sha256),
     );
     assert.deepEqual(
-      inspectBridgeMemory(memory, episodeFork.memoryId).episodes,
-      inspectBridgeMemory(memory, imported.memoryId).episodes,
+      inspectBridgeMemory(memory, episodeFork.memoryId).entries,
+      inspectBridgeMemory(memory, imported.memoryId).entries,
     );
     resetBridgeMemory(memory, imported.memoryId);
-    assert.equal(storedBridgeEvents(memory, imported.memoryId).length, 0);
+    assert.deepEqual(
+      storedBridgeEvents(memory, imported.memoryId).map(
+        (event) => event.eventType,
+      ),
+      ["bridge-reset"],
+    );
     assert.ok(storedBridgeEvents(memory, second.memoryId).length);
   } finally {
     memory.close();

@@ -5,6 +5,7 @@ import type {
 } from "../../../server/src/game-connections";
 import type { CharacterSummary } from "../../../runtime-host/src/service-types";
 import { api, ApiError } from "./api";
+import { desktopBridge } from "./desktop";
 export type { GameBinding, GameGrant, GamePairRequest, CharacterSummary };
 export const COMPANION_ORIGIN = "http://127.0.0.1:8811";
 export interface MinecraftConnection {
@@ -59,23 +60,29 @@ async function localRequest<T>(
     ? AbortSignal.any([timeout, options.signal])
     : timeout;
   try {
-    const response = await fetch(COMPANION_ORIGIN + path, {
-      method: options.body === undefined ? "GET" : "POST",
-      mode: "cors",
-      credentials: "omit",
-      cache: "no-store",
-      redirect: "error",
-      signal,
-      headers: {
+    const desktop = desktopBridge();
+    const response = await fetch(
+      (desktop ? "/api/desktop/companion" : COMPANION_ORIGIN) + path,
+      {
+        method: options.body === undefined ? "GET" : "POST",
+        mode: "cors",
+        credentials: "omit",
+        cache: "no-store",
+        redirect: "error",
+        signal,
+        headers: {
+          ...(options.body === undefined
+            ? {}
+            : { "Content-Type": "application/json" }),
+          ...(!desktop && options.token
+            ? { Authorization: `Bearer ${options.token}` }
+            : {}),
+        },
         ...(options.body === undefined
           ? {}
-          : { "Content-Type": "application/json" }),
-        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+          : { body: JSON.stringify(options.body) }),
       },
-      ...(options.body === undefined
-        ? {}
-        : { body: JSON.stringify(options.body) }),
-    });
+    );
     const value: unknown = await response.json();
     if (!response.ok) {
       const error = value as { error?: { code?: string } };
@@ -151,6 +158,12 @@ export function gameConnectionError(error: unknown, companion = false): string {
       ? error.code
       : "unavailable";
   if (companion) {
+    if (desktopBridge()) {
+      if (["expired", "unauthorized", "pairing", "forbidden"].includes(code))
+        return "Start and approve the bundled companion again. The saved connection will be available after approval.";
+      if (code === "timeout" || code === "unreachable")
+        return "The bundled companion did not respond. Start and approve it again, then refresh its status.";
+    }
     if (
       [
         "expired",
