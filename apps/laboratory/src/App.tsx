@@ -149,7 +149,7 @@ function ContextSelection({
   );
 }
 
-function WorkspaceApp() {
+function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
   const auth = useRuntimeAuth();
   const laboratoryAvailable =
     auth.config.mode === "local" && auth.config.laboratory;
@@ -188,7 +188,11 @@ function WorkspaceApp() {
   const [snapshot, setSnapshot] = useState<LabSnapshot | null>(null);
   const trail: WorkspaceTrail = sectionTrails[section] ?? { items: [] };
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ reason: unknown } | null>(null);
+  const error = loadError ? friendlyError(loadError.reason) : null;
+  const needsRecovery =
+    loadError?.reason instanceof ApiError &&
+    loadError.reason.code === "stored-format-unsupported";
   const [operationError, setOperationError] = useState<string | null>(null);
   const [provider, setProvider] = useState<ProviderId>("scenario");
   const [model, setModel] = useState("");
@@ -235,8 +239,8 @@ function WorkspaceApp() {
     setStatus(next);
     if (history.status === "fulfilled") setSnapshot(history.value);
     const problem = history.status === "rejected" ? history : catalog;
-    setError(
-      problem.status === "rejected" ? friendlyError(problem.reason) : null,
+    setLoadError(
+      problem.status === "rejected" ? { reason: problem.reason } : null,
     );
   }, []);
 
@@ -244,7 +248,7 @@ function WorkspaceApp() {
     const controller = new AbortController();
     void refresh(controller.signal)
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(friendlyError(reason));
+        if (!controller.signal.aborted) setLoadError({ reason });
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -410,7 +414,7 @@ function WorkspaceApp() {
     try {
       await refresh();
     } catch (reason) {
-      setError(friendlyError(reason));
+      setLoadError({ reason });
     } finally {
       setLoading(false);
     }
@@ -506,9 +510,32 @@ function WorkspaceApp() {
                 {error && (
                   <div className="feedback error" role="alert">
                     <p>{error}</p>
-                    <Button variant="outline" onClick={() => void reload()}>
-                      Try again
-                    </Button>
+                    {needsRecovery ? (
+                      supportUrl ? (
+                        <Button
+                          asChild
+                          variant="outline"
+                          className="touch-target"
+                        >
+                          <a
+                            href={supportUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Contact support
+                          </a>
+                        </Button>
+                      ) : (
+                        <p>
+                          Keep your existing workspace and ask the person who
+                          manages this installation about recovery.
+                        </p>
+                      )
+                    ) : (
+                      <Button variant="outline" onClick={() => void reload()}>
+                        Try again
+                      </Button>
+                    )}
                   </div>
                 )}
                 {!selectedProvider?.available && section !== "settings" && (
@@ -627,35 +654,37 @@ function WorkspaceApp() {
                     selectedModel={selectedModel}
                   />
                 </section>
-                <section
-                  hidden={section !== "chat"}
-                  aria-label="Character conversation"
-                >
-                  <ContextSelection
-                    scope="conversation"
-                    characters={characters}
-                    profileId={
-                      snapshot?.persona?.characterId ??
-                      snapshot?.character.characterId ??
-                      "character-lumen"
-                    }
-                    memoryId={
-                      snapshot?.character.characterId ?? "character-lumen"
-                    }
-                    busy={Boolean(pending) || characterBusy}
-                    onSelect={chooseCharacter}
-                  />
-                  <ChatPanel
-                    snapshot={snapshot}
-                    draft={draft}
-                    setDraft={setDraft}
-                    pending={pending}
-                    ready={ready}
-                    provider={selectedProvider?.label ?? "Provider"}
-                    model={selectedModel}
-                    onSend={() => void run("chat")}
-                  />
-                </section>
+                {!needsRecovery && (
+                  <section
+                    hidden={section !== "chat"}
+                    aria-label="Character conversation"
+                  >
+                    <ContextSelection
+                      scope="conversation"
+                      characters={characters}
+                      profileId={
+                        snapshot?.persona?.characterId ??
+                        snapshot?.character.characterId ??
+                        "character-lumen"
+                      }
+                      memoryId={
+                        snapshot?.character.characterId ?? "character-lumen"
+                      }
+                      busy={Boolean(pending) || characterBusy}
+                      onSelect={chooseCharacter}
+                    />
+                    <ChatPanel
+                      snapshot={snapshot}
+                      draft={draft}
+                      setDraft={setDraft}
+                      pending={pending}
+                      ready={ready}
+                      provider={selectedProvider?.label ?? "Provider"}
+                      model={selectedModel}
+                      onSend={() => void run("chat")}
+                    />
+                  </section>
+                )}
                 <section
                   hidden={section !== "memory"}
                   aria-label="Character memory"
@@ -700,7 +729,7 @@ function WorkspaceApp() {
   );
 }
 
-export function App() {
+export function App({ supportUrl }: { supportUrl?: string } = {}) {
   const auth = useRuntimeAuth();
   if (!auth.signedIn)
     return (
@@ -719,5 +748,5 @@ export function App() {
         )}
       </main>
     );
-  return <WorkspaceApp key={auth.userId} />;
+  return <WorkspaceApp key={auth.userId} supportUrl={supportUrl} />;
 }

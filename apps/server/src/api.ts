@@ -88,6 +88,26 @@ export interface APIOptions {
 }
 const error = (code: string, message: string, status = 400) =>
   Response.json({ ok: false, error: { code, message } }, { status });
+function workspaceRead<T>(
+  result:
+    | { ok: true; value: T; reused?: boolean }
+    | { ok: false; error: { code: string; message: string } },
+) {
+  if (
+    !result.ok &&
+    result.error.code === "unsupported" &&
+    result.error.message ===
+      "Stored document format is unsupported; no migration or reset was performed."
+  ) {
+    return error(
+      "stored-format-unsupported",
+      "This workspace contains records from an older or unsupported format.",
+      409,
+    );
+  }
+  return Response.json(result);
+}
+
 export function createAPI(options: APIOptions) {
   const now = options.now ?? Date.now;
   let busy = false;
@@ -654,7 +674,7 @@ export function createAPI(options: APIOptions) {
     }
     if (path === "/api/characters" && "listCharacters" in options.service) {
       if (request.method === "GET")
-        return Response.json(options.service.listCharacters());
+        return workspaceRead(options.service.listCharacters());
       if (request.method === "POST") {
         if (busy)
           return error(
@@ -669,7 +689,7 @@ export function createAPI(options: APIOptions) {
     }
     if (path === "/api/snapshot" && request.method === "GET") {
       const id = url.searchParams.get("characterId") ?? undefined;
-      return Response.json(
+      return workspaceRead(
         "listCharacters" in options.service
           ? options.service.snapshot(
               id,

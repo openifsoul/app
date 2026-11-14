@@ -37,7 +37,7 @@ test("old persisted owner records stop initialization without creating a replace
   const old = {
     ...character(),
     characterId: "old-owner",
-    schemaVersion: "0.3.0",
+    schemaVersion: "draft-0.2.0",
   };
   const bytes = JSON.stringify(old);
   try {
@@ -59,6 +59,28 @@ test("old persisted owner records stop initialization without creating a replace
       const result = workspace.listCharacters();
       assert.equal(result.ok, false);
       if (!result.ok) assert.equal(result.error.code, "unsupported");
+      const { createAPI } = await import("../../apps/server/src/api.js");
+      const api = createAPI({
+        mode: "local",
+        access: { kind: "local", origin: "http://127.0.0.1:8793" },
+        password: "",
+        encryptionKey: "synthetic",
+        store: { get: () => undefined, set: () => {}, delete: () => {} },
+        service: workspace,
+        providers: async () => [],
+      });
+      for (const path of ["characters", "snapshot"]) {
+        const response = await api(
+          new Request(`http://127.0.0.1:8793/api/${path}`, {
+            headers: { host: "127.0.0.1:8793" },
+          }),
+        );
+        assert.equal(response.status, 409);
+        assert.equal(
+          (await response.json()).error.code,
+          "stored-format-unsupported",
+        );
+      }
       opened.value.close();
       const check = new DatabaseSync(file);
       assert.equal(

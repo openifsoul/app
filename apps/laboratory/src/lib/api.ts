@@ -112,6 +112,8 @@ export async function api<T>(
 export function friendlyError(error: unknown): string {
   const code = error instanceof ApiError ? error.code : "unavailable";
   const messages: Record<string, string> = {
+    "stored-format-unsupported":
+      "Your saved data needs an update before it can be opened.",
     unsupported:
       "This runtime could not read the requested data. Try again or contact the runtime operator.",
     busy: "Wait for the current operation to finish, then try again.",
