@@ -28,6 +28,68 @@ export interface LabRunRequest extends ProviderSelection {
   operation: "plan" | "chat";
   requestId: string;
   message?: string;
+  gameContext?: { anchor: string; sources: string[] };
+}
+interface LinkedGameRecord {
+  eventId: string;
+  worldId: string;
+  originHostId: string;
+  text: string;
+}
+
+export interface LinkedGameEvidence {
+  conversationRoles: {
+    speakingNpc: {
+      participantId: string;
+      portrayalCharacterId: string;
+      portrayalName: string;
+    };
+    currentPlayer: { participantId: string; displayName: string };
+  };
+  currentEventId: string;
+  currentUtterance: {
+    eventId: string;
+    reporterId: string;
+    source: "participant-claim";
+    origin: "app-conversation";
+  };
+  participantClaims: (LinkedGameRecord & { reporterId: string })[];
+  companionDialogue: (LinkedGameRecord & { speakerParticipantId: string })[];
+  verifiedHostObservations: (LinkedGameRecord & {
+    reportingHostId: string;
+    actorParticipantId: string;
+    action: string;
+    result: string;
+  })[];
+  proposedRelationships?: {
+    proposalRef: string;
+    parameterId: string;
+    targetParticipantId: string;
+    status: "uncommitted";
+    subjectNpcId: string;
+    configRevision: number;
+    stateRevision: number;
+    proposedStateRevision: number;
+    before: {
+      value: number;
+      confidence: number | null;
+      valueRevision: number | null;
+    };
+    proposedAfter: { value: number; confidence: number };
+    baselineEvidenceEventIds: string[];
+    evidenceEventIds: string[];
+  }[];
+  relationships: {
+    subjectNpcId: string;
+    parameterId: string;
+    targetParticipantId: string;
+    before: number;
+    after: number;
+    recordedRevision: number;
+    confidence: number;
+    reason: string;
+    evidenceEventIds: string[];
+  }[];
 }
 export interface LabStage {
   stage: string;

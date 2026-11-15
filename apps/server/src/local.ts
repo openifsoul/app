@@ -7,6 +7,9 @@ import { browseScopedHistory } from "../../runtime-host/src/memory-explorer.js";
 import { failure } from "@ifsoul/core/memory/port";
 import { createBridgeSourcePolicy } from "./bridge-source-access.js";
 import { createGameExecutor } from "./game-executor.js";
+import { createMineflayerGroups } from "./mineflayer-groups.js";
+import { createGameContinuity } from "./game-continuity.js";
+import { SessionError } from "@ifsoul/core/runtime";
 import { createAppBehavior } from "./behavior.js";
 import { createSQLParticipantStore } from "../../runtime-host/src/participant-sessions.js";
 import type { SQLDriver } from "@ifsoul/core/memory/sql";
@@ -48,7 +51,7 @@ import {
   type PrivateStore,
   type ProviderOption,
 } from "./api.js";
-import { secured } from "./security.js";
+import { boundedJSON, secured } from "./security.js";
 const desktopSecret = process.env.IFSOUL_DESKTOP_SECRET;
 let resourceConfiguration: AppResourceConfiguration = {};
 if (process.env.IFSOUL_RESOURCE_POLICY_FILE) {
@@ -169,6 +172,7 @@ const store: PrivateStore = {
 };
 const bridgeSourcePolicy = createBridgeSourcePolicy(store);
 const ollamaOptions = {
+  temperature: resourcePolicy.ollama.temperature,
   baseUrl: process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
   limits: resourcePolicy.ollama.provider.effective,
   budgetPolicy: resourcePolicy.ollama.budgetPolicy,
@@ -308,6 +312,7 @@ const service = createCharacterWorkspace({
         },
         fitsModelInput: ollamaPromptBudget(selection)?.fitsModelInput,
         model: selection.model,
+        recallAnswerability: true,
         promptBudgetBytes:
           selection.provider === "ollama"
             ? resourcePolicy.ollama.promptBytes
@@ -371,6 +376,30 @@ const gameExecutor = createGameExecutor({
   promptBudgetFor: ollamaPromptBudget,
   validate: async (binding) => gameBroker.current(binding),
 });
+const gameContinuity = selfHosted
+  ? undefined
+  : createGameContinuity({
+      principalId: "local-owner",
+      broker: gameBroker,
+      store: participantStore,
+      workspace: service,
+      clientFor,
+      timeoutMs: resourcePolicy.runtime.effective.controllerTimeoutMs,
+      reflectionTimeoutMs: Math.min(
+        60000,
+        resourcePolicy.ollama.generationTimeoutMs,
+      ),
+      promptBudgetFor: ollamaPromptBudget,
+      sourceAccess: bridgeSourcePolicy.snapshot,
+    });
+const mineflayerGroups = selfHosted
+  ? undefined
+  : createMineflayerGroups({
+      principalId: "local-owner",
+      store: participantStore,
+      bindings: () => gameBroker.list("local-owner"),
+      clientFor: (binding) => clientFor(binding),
+    });
 const ownerAPI = createAPI({
   mode: "local",
   resourcePolicy,
@@ -383,6 +412,8 @@ const ownerAPI = createAPI({
   service,
   behavior,
   providers,
+  ...(mineflayerGroups && { mineflayerGroups: mineflayerGroups.owner }),
+  ...(gameContinuity && { gameContinuity }),
   browseGameMemory(params) {
     try {
       const binding = gameBroker.inspection(
@@ -510,12 +541,42 @@ const mime: Record<string, string> = {
 };
 const api = async (request: Request, serverConnectorOnly: boolean) => {
   const path = new URL(request.url).pathname;
+  if (path === "/api/game/device/group") {
+    if (!mineflayerGroups || request.method !== "POST")
+      return secured(new Response(null, { status: 404 }));
+    if (
+      ["origin", "cookie", "sec-fetch-site"].some((header) =>
+        request.headers.has(header),
+      )
+    )
+      return secured(new Response(null, { status: 403 }));
+    try {
+      const body = (await boundedJSON(request, 4096)) as Record<
+        string,
+        unknown
+      >;
+      return secured(
+        Response.json(
+          await mineflayerGroups.command(
+            body,
+            request.headers.get("authorization"),
+          ),
+        ),
+      );
+    } catch (error) {
+      const stale = error instanceof SessionError && error.code === "stale";
+      return secured(
+        Response.json({ ok: false }, { status: stale ? 409 : 403 }),
+      );
+    }
+  }
   if (path.startsWith("/api/game/device/")) {
     const response = await gameDeviceRequest(
       request,
       gameBroker,
       (binding, body) => gameExecutor.execute(binding, body, request.signal),
       serverConnectorOnly,
+      !selfHosted,
     );
     return secured(response);
   }
@@ -528,6 +589,8 @@ const devicePaths = new Set([
   "/api/game/device/revoke",
   "/api/game/device/owner-proof",
   "/api/game/device/history-consent",
+  "/api/game/device/continuity-consent",
+  "/api/game/device/group",
 ]);
 const desktopCompanionPaths = new Map([
   ["status", "GET"],
@@ -664,7 +727,10 @@ const server = createServer(async (req, res) => {
       }
       chunks.push(b);
     }
-    const cancellation = desktopSecret ? new AbortController() : undefined;
+    const cancellation =
+      desktopSecret || pathname === "/api/chat"
+        ? new AbortController()
+        : undefined;
     if (cancellation) {
       res.once("close", () => {
         if (!res.writableEnded) cancellation.abort();

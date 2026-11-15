@@ -40,7 +40,19 @@ an explicit category. The deterministic initial rules update the trust,
 cooperation and caution presets; `createBehaviorModelProposer` uses the existing
 ModelClient port for bounded evidence-linked relationship or transient-state
 deltas. Parameter-specific schemas omit a target for state and require a verified
-target for a relationship. Runtime validation remains authoritative.
+target for a relationship. Each internal model proposal supplies the current
+event reference separately from earlier evidence. The App validates both
+against the offered IDs before composing the runtime evidence list. Earlier
+private evidence must belong to the same interlocutors and authorized worlds. Private claims retain the recorded reporter's ID, including when the
+claim attributes an action to somebody else. The resulting revision stores
+source IDs, confidence and an explanation
+while preserving the original events. The App composes proposal identity and
+revisions from inspected runtime state. The model proposes changes and concise
+reasons based on the current message and eligible sources. A model chooses a signed
+relative magnitude from the offered strengths. The App converts it using the
+configured maximum delta, validates the selection, and passes a numeric delta to
+Core. A zero magnitude can revise confidence without changing the value.
+Runtime validation remains authoritative.
 
 The local App binds character memory ownership through its verified
 CharacterWorkspace, independently of profile names and game embodiments. Explicitly
@@ -56,6 +68,19 @@ rejections do not become SDK fallback speech. Allowed generation receives bounde
 current authorized behavior state/goals; old bridge reflection is not injected
 wholesale into that configured path. Existing stored reflection/evidence remains
 intact; there is no implicit data conversion or relabeling.
+
+In [linked App Conversation](memory.md#continue-as-a-mineflayer-player-in-conversation),
+reflection and the reply share the controller deadline. If reflection times
+out or returns an unusable proposal, it writes no relationship change. The
+reply generation can explain a pending change when its evidence and baseline
+sources remain available in context. The proposal shows current and proposed
+values and confidences separately from recorded revisions. The proposal stays
+pending until the App commits the explained change and companion reply together
+after rechecking consent and revisions. The App can proceed with the reply
+without a change while there is time and the selected game consent and evidence
+scope remain valid. Ordinary App behavior state displays
+the ordinary App session's evidence and relationship history. Shared
+configuration remains available for its authorized targets.
 
 The unconfigured solitary bridge retains its existing behavior. Mapped configured
 bridges must resolve an existing owner-authorized memory identity; equal display

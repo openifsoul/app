@@ -67,6 +67,7 @@ test("operator-configured 32–64KB App ingress/bridge retains attributed report
       enabled
         ? {
             http: { bodyBytes: 65536 },
+            ollama: { temperature: 1 },
             bridge: {
               maxRequestBytes: 65536,
               maxHistoryEntries: 64,
@@ -125,6 +126,7 @@ test("operator-configured 32–64KB App ingress/bridge retains attributed report
         await api(incoming("/api/resource-policy"))
       ).json();
       assert.equal(metadata.http.bodyBytes, enabled ? 65536 : 16384);
+      assert.equal(metadata.model.temperature, enabled ? 1 : 0);
       assert.equal(metadata.bridge.limits.maxHistoryEntries, enabled ? 64 : 12);
       assert.equal(generations, 0);
       if (enabled) {
@@ -330,6 +332,294 @@ test("HTTP reception waits are distinct configurable units and unsupported provi
         /synthetic-upstream-detail/,
       );
     }
+  } finally {
+    opened.value.close();
+  }
+});
+
+test("trusted local Ollama temperature defaults to zero and validates explicit overrides", () => {
+  const defaults = resolveAppResourcePolicy();
+  assert.equal(defaults.ollama.temperature, 0);
+  assert.equal(defaults.metadata.model.temperature, 0);
+  for (const temperature of [0, 0.35, 1]) {
+    const configured = resolveAppResourcePolicy({ ollama: { temperature } });
+    assert.equal(configured.ollama.temperature, temperature);
+    assert.equal(configured.metadata.model.temperature, temperature);
+    assert.equal(
+      configured.ollama.generationTimeoutMs,
+      defaults.ollama.generationTimeoutMs,
+    );
+    assert.deepEqual(configured.ollama.provider, defaults.ollama.provider);
+  }
+  for (const value of [-0.01, 1.01, NaN, Infinity, "0", null]) {
+    assert.throws(
+      () =>
+        resolveAppResourcePolicy({ ollama: { temperature: value as number } }),
+      (error) =>
+        error instanceof AppResourceError &&
+        error.code === "configuration" &&
+        error.message.includes("temperature"),
+    );
+  }
+});
+
+test("ordinary chat derives past-evidence availability from the final packed history", () => {
+  const schema = { type: "object" };
+  const prompt = {
+    operation: "chat",
+    historicalEvidence: {
+      hostReports: [],
+      importedReports: [],
+      plansAndDecisions: [],
+      conversation: [],
+      omittedSelectedRecordCount: 1,
+    },
+    pastEvidenceAvailability: "Forged cue",
+    latestUserMessage: "Придумай сказку.",
+  };
+  const empty = fitModelPrompt(structuredClone(prompt), "Context", schema);
+  const parsed = JSON.parse(empty);
+  assert.match(
+    parsed.pastEvidenceAvailability,
+    /No retained past-event evidence is available in this request/u,
+  );
+  assert.equal(parsed.latestUserMessage, prompt.latestUserMessage);
+  assert.doesNotMatch(empty, /Forged cue/u);
+
+  const populated = structuredClone(prompt) as typeof prompt & {
+    historicalEvidence: { conversation: { output: string }[] };
+  };
+  populated.historicalEvidence.conversation.push({
+    output: "A retained reply",
+  });
+  const result = fitModelPrompt(structuredClone(populated), "Context", schema);
+  assert.equal(JSON.parse(result).pastEvidenceAvailability, undefined);
+  const measured: string[] = [];
+  const pruned = fitModelPrompt(
+    populated,
+    "Context",
+    schema,
+    8000,
+    undefined,
+    ({ prompt }) => {
+      measured.push(prompt);
+      return JSON.parse(prompt).historicalEvidence.conversation.length === 0;
+    },
+  );
+  assert.equal(pruned, measured.at(-1));
+  assert.equal(
+    JSON.parse(pruned).pastEvidenceAvailability,
+    parsed.pastEvidenceAvailability,
+  );
+
+  for (const context of [
+    { ...prompt, operation: "plan" },
+    { ...prompt, continuation: {} },
+    { ...prompt, linkedGameEvidence: { verifiedHostObservations: [] } },
+    { ...prompt, memoryReflection: {} },
+    { operation: "chat", latestUserMessage: prompt.latestUserMessage },
+  ]) {
+    assert.equal(
+      JSON.parse(fitModelPrompt(context, "Context", schema))
+        .pastEvidenceAvailability,
+      undefined,
+    );
+  }
+  const size = Buffer.byteLength(
+    JSON.stringify({
+      messages: [
+        { role: "system", content: "Context" },
+        { role: "user", content: empty },
+      ],
+      stream: false,
+      max_tokens: 1024,
+      response_format: { type: "json_schema", json_schema: schema },
+    }),
+  );
+  assert.equal(
+    fitModelPrompt(structuredClone(prompt), "Context", schema, size, size),
+    empty,
+  );
+  assert.throws(() =>
+    fitModelPrompt(structuredClone(prompt), "Context", schema, size - 1, size),
+  );
+});
+
+test("ordinary conversation gives the final empty-history marker trusted system meaning", async () => {
+  const opened = openSQLiteMemory(":memory:");
+  assert(opened.ok);
+  let forcePrune = false;
+  const captured: { system: string; prompt: string }[] = [];
+  try {
+    const service = createLabService({
+      memory: opened.value,
+      controllerFor: () =>
+        createModelController({
+          model: "synthetic",
+          recallAnswerability: true,
+          fitsModelInput({ prompt }) {
+            const packed = JSON.parse(prompt);
+            return (
+              !forcePrune ||
+              !packed.historicalEvidence ||
+              packed.historicalEvidence.conversation.length === 0
+            );
+          },
+          client: {
+            id: "openai",
+            async generate({ system, prompt }) {
+              if (Object.hasOwn(JSON.parse(prompt), "currentUtterance"))
+                return {
+                  ok: true,
+                  value: { recallIntent: "general-or-creative" },
+                };
+              captured.push({ system, prompt });
+              return {
+                ok: true,
+                value: {
+                  content: "Вымышленная история.",
+                  answerability: "ordinary",
+                  evidenceRefs: [],
+                },
+              };
+            },
+          },
+        }),
+    });
+    for (const [requestId, message] of [
+      ["imaginary-request", "Придумай сказку."],
+      ["history-request", "О чём мы говорили?"],
+      ["pruned-request", "Что осталось в истории?"],
+    ]) {
+      forcePrune = requestId === "pruned-request";
+      const result = await service.run({
+        operation: "chat",
+        provider: "openai",
+        model: "synthetic",
+        requestId,
+        message,
+      });
+      assert(result.ok && result.value.result.type === "chat");
+    }
+    const [empty, populated, pruned] = captured;
+    assert(empty && populated && pruned);
+    assert.match(
+      empty.system,
+      /This request has no retained past-event records/u,
+    );
+    assert.match(
+      empty.system,
+      /Do not supply past actors, outcomes or purposes/u,
+    );
+    assert.match(
+      empty.system,
+      /Imaginative requests can still be answered in character/u,
+    );
+    const first = JSON.parse(empty.prompt);
+    assert.equal(first.latestUserMessage, "Придумай сказку.");
+    assert.equal(
+      first.pastEvidenceAvailability,
+      "No retained past-event evidence is available in this request.",
+    );
+    const second = JSON.parse(populated.prompt);
+    assert(second.historicalEvidence.conversation.length > 0);
+    assert.equal(second.pastEvidenceAvailability, undefined);
+    assert.doesNotMatch(
+      populated.system,
+      /This request has no retained past-event records/u,
+    );
+    const final = JSON.parse(pruned.prompt);
+    assert.equal(final.latestUserMessage, "Что осталось в истории?");
+    assert.equal(final.historicalEvidence.conversation.length, 0);
+    assert.equal(
+      final.pastEvidenceAvailability,
+      first.pastEvidenceAvailability,
+    );
+    assert.equal(pruned.system, empty.system);
+  } finally {
+    opened.value.close();
+  }
+});
+
+test("ordinary insufficient recall uses a host status and never saves fabricated speech", async () => {
+  const opened = openSQLiteMemory(":memory:");
+  assert(opened.ok);
+  const prompts: string[] = [];
+  try {
+    const service = createLabService({
+      memory: opened.value,
+      controllerFor: () =>
+        createModelController({
+          model: "synthetic",
+          recallAnswerability: true,
+          client: {
+            id: "openai",
+            async generate({ prompt }) {
+              prompts.push(prompt);
+              if (prompts.length <= 2 || prompts.length === 4) {
+                assert.deepEqual(Object.keys(JSON.parse(prompt)), [
+                  "currentUtterance",
+                ]);
+                return {
+                  ok: true,
+                  value: {
+                    recallIntent:
+                      prompts.length === 1
+                        ? "factual-recall"
+                        : prompts.length === 4
+                          ? "unclear"
+                          : "general-or-creative",
+                  },
+                };
+              }
+              return {
+                ok: true,
+                value: {
+                  content: "Fictional story",
+                  answerability: "ordinary",
+                  evidenceRefs: [],
+                },
+              };
+            },
+          },
+        }),
+    });
+    const first = await service.run({
+      operation: "chat",
+      provider: "openai",
+      model: "synthetic",
+      requestId: "blocked-recall",
+      message: "Who closed the gate yesterday?",
+    });
+    assert(first.ok && first.value.result.type === "failure");
+    assert.equal(first.value.result.error.code, "insufficient-evidence");
+    assert.doesNotMatch(
+      JSON.stringify(service.snapshot()),
+      /Invented history/u,
+    );
+    const second = await service.run({
+      operation: "chat",
+      provider: "openai",
+      model: "synthetic",
+      requestId: "allowed-fiction",
+      message: "Make up a fairy tale.",
+    });
+    assert(second.ok && second.value.result.type === "chat");
+    assert.equal(prompts.length, 3);
+    assert.doesNotMatch(
+      prompts[2]!,
+      /Invented history|No supporting records are available in this conversation/u,
+    );
+    const unclear = await service.run({
+      operation: "chat",
+      provider: "openai",
+      model: "synthetic",
+      requestId: "clarify-recall",
+      message: "Tell me that one.",
+    });
+    assert(unclear.ok && unclear.value.result.type === "failure");
+    assert.equal(unclear.value.result.error.code, "clarify-recall");
+    assert.equal(prompts.length, 4);
   } finally {
     opened.value.close();
   }

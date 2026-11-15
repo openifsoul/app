@@ -70,8 +70,13 @@ flowchart LR
   Bridge --> Grant[Scoped device request]
   Grant --> Binding[Server-owned identity and memory binding]
   Binding --> Runtime[Participant runtime and behavior policy]
-  Runtime --> Provider[Selected model provider]
-  Provider --> Fence[App checks grant and configuration revisions]
+  Runtime --> Scope{Allowed turn scope}
+  Scope -->|Speech only| Dialogue[Model reply without action choices]
+  Scope -->|Mixed request| Intent[Current utterance intent]
+  Intent -->|Affirmative| Plan[Model reply with bounded choices]
+  Intent -->|Unclear or no action| Dialogue
+  Dialogue --> Fence[App checks grant and configuration revisions]
+  Plan --> Fence
   Fence --> Decision{Structured decision}
   Decision -->|Dialogue| Reply[Private client reply]
   Fence --> Memory[Durable private events]
@@ -95,31 +100,26 @@ Signing out ends the browser owner session. Use Revoke or Clear to end the separ
 
 ## Minecraft server-side bridges
 
-| Bridge | Pinned Minecraft/runtime | Local dialogue acceptance |
-| --- | --- | --- |
-| Citizens 2.0.37 b3763 | Minecraft 1.21.4, Paper build 232, Java 21 | Native private dialogue |
-| Easy NPC 6.0.2 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Native private dialogue |
+| Bridge                                | Pinned Minecraft/runtime                     | Local dialogue acceptance                                             |
+| ------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
+| Citizens 2.0.37 b3763                 | Minecraft 1.21.4, Paper build 232, Java 21   | Native private dialogue                                               |
+| Easy NPC 6.0.2                        | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Native private dialogue                                               |
 | CustomNPCs Unofficial 1.21.1.20251230 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Private reply received by the local modded client and retained in App |
-| MineColonies 1.1.1403 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Private reply received by the local modded client and retained in App |
+| MineColonies 1.1.1403                 | Minecraft 1.21.1, NeoForge 21.1.235, Java 21 | Private reply received by the local modded client and retained in App |
 
-The local gameplay grants allow Citizens to follow or walk to a
-nearby player, CustomNPCs to walk to a nearby player, and MineColonies to recall
-the selected citizen to its assigned work building. Citizens movement and stop
-passed a local Paper exercise. Easy NPC movement passed an independent local
-NeoForge exercise through the App with an owned NPC, a native travel objective
-and idle ground navigation at connection time. CustomNPCs passed local
-NeoForge client and App verification with the unmodified bridge, including
-movement, stop, revoke and re-pair. MineColonies passed local NeoForge client
-and App verification with the unmodified bridge for assigned workplace recall,
-cancellation before recall, revocation and re-pair.
-The App requires a fresh owner opt-in and a matching ready handshake from a
-compatible bridge with `game-actions` enabled. The list reports capability
-availability at the last handshake.
+Gameplay grants authorize bounded actions on each compatible host. Citizens
+can walk to or follow the approved nearby player. Easy NPC and CustomNPCs can
+walk to the approved nearby player. MineColonies can recall the selected citizen to
+its assigned work building. The App requires a fresh owner opt-in and a
+matching ready handshake from a compatible bridge with `game-actions` enabled.
+The list reports capability availability at the last handshake.
 
 Each server-side pairing grants private dialogue between one approved player
-and one NPC. Game mechanics and group scope remain with the game. Game setup
-does not prove model recall fidelity. The local Qwen model's source-faithful
-Russian recall remains unverified.
+and one NPC. For a mixed dialogue and action request, the App first classifies
+the current utterance. Only an affirmative action intent makes the permitted
+choices available to the dialogue model. The host checks current authority
+before executing a choice, and the App retains the host's observed outcome
+for later recall. Stop and revocation fence pending or active work.
 
 In **Games → Configure Minecraft**, select the server software and Minecraft
 version, then choose the matching bridge. Mineflayer retains its companion
@@ -149,15 +149,66 @@ upstream mods and set the connector configuration with your server operator.
 
 ### Choose actions for the bridge you installed
 
-| Bridge | Setup and supported player request | Local evidence |
-| --- | --- | --- |
-| Mineflayer | Enable movement in the App and join as the approved player. Whisper a request to follow or walk to a nearby point. Enable hostile-mob defense separately. | Real local Ollama request, observed movement and durable stop outcome. |
-| Citizens | Set `game-actions: true` in the bridge configuration. Select the paired NPC and ask privately to follow or come nearby. | App, Paper and the unmodified local plugin verified with a deterministic provider. |
-| Easy NPC | Enable `game-actions` for the paired NPC. The approved player must own it. Configure a native travel objective, such as Follow Owner, and adjust it for your setup so ground navigation is idle at connection time. Ask it to come nearby. | App and local NeoForge movement verified with a deterministic provider. |
-| CustomNPCs Unofficial | Enable `game-actions` and select the paired NPC. Ask it to come nearby. | Local NeoForge client, App and unmodified bridge verified with a deterministic provider. |
-| MineColonies | Enable `game-actions` for the selected citizen. Use a loaded citizen with an assigned, loaded workplace nearby. The approved player needs permission to interact with citizens and manage huts. Ask to recall the citizen to work. | Local NeoForge client, App and unmodified bridge verified with a deterministic provider. |
+| Bridge                | Setup and supported player request                                                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Mineflayer            | Enable movement in the App and join as the approved player. Whisper a request to follow or walk to a nearby point. Enable hostile-mob defense separately.                                                                                  |
+| Citizens              | Set `game-actions: true` in the bridge configuration. Select the paired NPC and ask privately to follow or come nearby.                                                                                                                    |
+| Easy NPC              | Enable `game-actions` for the paired NPC. The approved player must own it. Configure a native travel objective, such as Follow Owner, and adjust it for your setup so ground navigation is idle at connection time. Ask it to come nearby. |
+| CustomNPCs Unofficial | Enable `game-actions` and select the paired NPC. Ask it to come nearby.                                                                                                                                                                    |
+| MineColonies          | Enable `game-actions` for the selected citizen. Use a loaded citizen with an assigned, loaded workplace nearby. The approved player needs permission to interact with citizens and manage huts. Ask to recall the citizen to work.         |
 
-The device activates only the actions both approved in the App and reported
-available by the bridge. The App lists actions reported at the last connection.
-Check a newly configured NPC by reconnecting the bridge. Selection and command
-details are in each bridge's setup guide. These results apply to local builds.
+## Run a Mineflayer group
+
+The local App and Desktop Games pages offer **Mineflayer group** for one
+trusted Minecraft Java 1.20.2 server. Create two or three Mineflayer
+connections with movement enabled, distinct owned memories, and the same
+available provider and model. Give each group member a unique bot name. The
+individual grants establish the available profiles, memories and movement
+permission. The group needs its own explicit approval to assign work.
+
+Enter a server-verified player name and UUID to allow that player to request
+surveys and send private messages. Enable the separate player-absent option
+to allow the cadence to continue when that player leaves. An autonomous group
+can omit both player fields to run surveys without player dialogue.
+
+Save the displayed configuration to a private JSON file and run
+`pnpm group /path/to/group.json` from the Mineflayer bridge checkout on the
+same computer as the App service. The setup code expires in five minutes and
+is redeemed once. The active host needs a fresh grant after a full disconnection.
+The App keeps durable group events separate from individual bridge transcripts.
+
+Send a private Minecraft message to the specific bot for an addressed
+conversation. Send `/tell FirstBot !group hello team` to share an input with the
+current group. The first bot responds privately to the approved player.
+Individual conversation inputs and their replies remain on that actor's
+private channel.
+
+Send `/tell FirstBot !group survey` to request a survey with a player present.
+The planner assigns one different cardinal direction per member. Each bot's
+Mineflayer pathfinder attempts to walk five blocks in that direction at the
+current height. The host may decline a movement or report an unreachable
+target. The App records the observed outcomes. The host grant permits up to
+three planning attempts, with at least 30 seconds between starts. Absent-player
+planning follows the same schedule and budget.
+
+```mermaid
+flowchart LR
+  Individual["Individual profile, memory and movement grants"] --> Approval["Explicit group approval"]
+  Approval --> Code["One-use loopback host code"]
+  Code --> Host["Mineflayer clients in one world"]
+  Host --> Pulse["Current members and player presence"]
+  Pulse --> Scheduler["Revision-fenced group scheduler"]
+  Scheduler --> Plan["Distinct five-block survey directions"]
+  Plan --> Host
+  Host --> Outcomes["Per-actor observed outcomes"]
+  Approval --> Revoke["Remove one member or stop the group"]
+  Revoke --> Scheduler
+  Revoke --> Host
+```
+
+Use **Remove member** to revoke the selected actor. The previous revision's
+assignments stop, the revoked bot disconnects, and the remaining bots stay
+online. The new revision preserves the original expiry, next due time and
+remaining planning attempts. With one member left the same grant permits a
+single-actor survey. Remove the last member or choose **Stop group** to end the
+group. The App manages the underlying individual connections separately.

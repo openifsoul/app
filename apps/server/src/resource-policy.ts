@@ -38,6 +38,7 @@ export interface AppResourceConfiguration {
   };
   bridge?: Partial<BridgeLimits>;
   ollama?: {
+    temperature?: number;
     promptBytes?: number;
     promptCeilingBytes?: number;
     generationTimeoutMs?: number;
@@ -108,6 +109,7 @@ export function resolveAppResourcePolicy(
         "promptBytes",
         "promptCeilingBytes",
         "generationTimeoutMs",
+        "temperature",
         "limits",
         "ceilings",
         "contexts",
@@ -200,6 +202,11 @@ export function resolveAppResourcePolicy(
       "prompt-packing",
       "promptBytes",
     );
+  const configuredTemperature = configuration.ollama?.temperature;
+  const temperature =
+    configuredTemperature === undefined ? 0 : configuredTemperature;
+  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 1)
+    throw new AppResourceError("configuration", "ollama-policy", "temperature");
   const generationTimeoutMs = integer(
     configuration.ollama?.generationTimeoutMs ?? 50000,
     "controller",
@@ -328,6 +335,7 @@ export function resolveAppResourcePolicy(
     retainedHistoryEntries: configuration.bridge?.maxHistoryEntries ?? 8,
     browserTimeoutMs,
     ollama: {
+      temperature,
       promptBytes,
       promptCeilingBytes,
       generationTimeoutMs,
@@ -351,6 +359,7 @@ export function resolveAppResourcePolicy(
         streamingLargeMessages: false,
       },
       model: {
+        temperature,
         provider,
         promptBytes,
         promptCeilingBytes,

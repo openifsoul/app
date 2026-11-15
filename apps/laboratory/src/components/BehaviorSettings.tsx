@@ -635,9 +635,13 @@ export function BehaviorSettings({
     );
   const validation = validDraft(draft),
     locked = snapshot.operator;
+  const appSessions = snapshot.catalog.sessions.filter(
+    (session) =>
+      session.worldId === "app-chat" &&
+      /^app-[a-f0-9]{24}$/.test(session.sessionId),
+  );
   const availableNpcs =
-    snapshot.catalog.sessions.find((s) => s.sessionId === sessionId)?.npcIds ??
-    [];
+    appSessions.find((s) => s.sessionId === sessionId)?.npcIds ?? [];
   return (
     <div className="behavior-workspace">
       <Card>
@@ -1296,7 +1300,7 @@ export function BehaviorSettings({
                     }}
                   >
                     <SelectItem value="">Choose session</SelectItem>
-                    {snapshot.catalog.sessions.map((s) => (
+                    {appSessions.map((s) => (
                       <SelectItem key={s.sessionId} value={s.sessionId}>
                         {s.worldId} · {s.sessionId}
                       </SelectItem>

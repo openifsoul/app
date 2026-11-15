@@ -6,6 +6,8 @@ import { minecraftConnectors } from "../../../shared/src/minecraft-connectors";
 import { MinecraftServerConnector } from "./MinecraftServerConnector";
 import { OptionSelect, SelectItem } from "./ui/select";
 import { GameConnectionSettings } from "./GameConnectionSettings";
+import { MineflayerGroupSettings } from "./MineflayerGroupSettings";
+import { useRuntimeAuth } from "../lib/runtime-auth";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Input } from "./ui/input";
@@ -20,6 +22,7 @@ export function Games({
   selectedProvider: string;
   selectedModel: string;
 }) {
+  const { config } = useRuntimeAuth();
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState(false);
   const [visited, setVisited] = useState(false);
@@ -164,6 +167,9 @@ export function Games({
             selectedModel={selectedModel}
           />
         )}
+        {detail &&
+          connector === "minecraft-mineflayer" &&
+          config.placement === "local" && <MineflayerGroupSettings />}
         {visited && connector !== "minecraft-mineflayer" && (
           <MinecraftServerConnector
             key={connector}

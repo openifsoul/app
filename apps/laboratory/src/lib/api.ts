@@ -131,6 +131,10 @@ export function friendlyError(error: unknown): string {
       "Could not reach this runtime. Check the connection and try again.",
     timeout:
       "This is taking longer than expected. Your draft is safe. Retry to check the same request.",
+    "clarify-recall":
+      "Please clarify whether you want a remembered event or an imagined one.",
+    "insufficient-evidence":
+      "No supporting records are available in this conversation.",
     "controller-failed":
       "The selected provider could not complete this request. Your draft is safe; try again.",
     "provider-unavailable":

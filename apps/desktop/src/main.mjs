@@ -25,6 +25,8 @@ import {
   finishMacUpdate,
   installMacUpdate,
   recoverMacUpdate,
+  rollbackMacTrial,
+  startMacUpdateSupervisor,
 } from "./update-install.mjs";
 import { checkUpdate } from "./update-feed.mjs";
 import { attachDesktopTray } from "./tray.mjs";
@@ -143,6 +145,10 @@ async function recover() {
     return;
   }
   if (pendingUpdate) {
+    if (process.env.IFSOUL_DESKTOP_UPDATE_TRIAL === updateLocation.statePath) {
+      app.exit(1);
+      return;
+    }
     try {
       await finishMacUpdate({
         ...updateLocation,
@@ -349,6 +355,8 @@ async function start() {
       );
       if (status.running !== false) return true;
     }
+    const groups = await privateRequest(appOrigin, "/api/game-groups");
+    if (groups.group?.state === "connected") return true;
     const result = await privateRequest(appOrigin, "/api/game-connections");
     if (!Array.isArray(result.connections))
       throw Error("Game status unavailable.");
@@ -439,7 +447,19 @@ async function start() {
       });
       if (result === "relaunch") {
         progress = "restarting";
-        if (!quitAfterUpdate) app.relaunch();
+        if (!quitAfterUpdate) {
+          try {
+            if (!(await startMacUpdateSupervisor(updateLocation)))
+              app.relaunch();
+          } catch (error) {
+            console.warn(
+              "Could not start Desktop update supervisor:",
+              error.message,
+            );
+            await rollbackMacTrial(updateLocation);
+            app.relaunch();
+          }
+        }
         checkingUpdate = false;
         app.quit();
         return { status: "restarting" };
@@ -633,6 +653,7 @@ async function start() {
     app.quit();
     return;
   }
+  attachDesktopTray({ app, Menu, Tray, nativeImage, root, window });
   if (pendingUpdate) {
     await finishMacUpdate({
       ...updateLocation,
@@ -642,7 +663,6 @@ async function start() {
     pendingUpdate = undefined;
   }
   restarting = false;
-  attachDesktopTray({ app, Menu, Tray, nativeImage, root, window });
   window.show();
 }
 

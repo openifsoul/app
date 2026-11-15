@@ -74,8 +74,12 @@ bundle identity, architecture, data format and bundled bridge receipt. The app
 checks the candidate's local service, rendered workspace and bundled companion
 with a disposable copy of the service data before exchanging the two bundles on the same volume. The original stays
 available until the installed candidate starts its own service and renders its
-workspace. Failed startup restores it automatically. The next launch recovers a
-transaction interrupted after exchange or during startup. The updater requires
+workspace. The updater supervises the installed candidate until it accepts the
+transaction. A failed or stalled candidate is stopped, then the previous bundle
+is restored and restarted automatically. A later launch can also recover an
+interrupted transaction if the update supervisor was interrupted. This
+supervisor runs from the installed updater that starts the update. The installed
+version must already include it to recover an early native startup failure. The updater requires
 the parent of the installed app to allow creating and exchanging its staging
 directory. Unsupported permissions and invalid artifacts leave the old app in
 place.

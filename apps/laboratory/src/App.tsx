@@ -38,6 +38,7 @@ import { LoaderCircle, RefreshCw } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Label } from "./components/ui/label";
 import {
+  OptionSelect,
   Select,
   SelectContent,
   SelectItem,
@@ -58,6 +59,14 @@ import {
 } from "./lib/api";
 
 type PendingOperation = "plan" | "chat" | null;
+type GameContextChoice = {
+  id: string;
+  worldId: string;
+  playerName: string;
+  playerScope: string;
+  scopeRevision: string;
+  characterId: string;
+};
 const readDraft = (id = "character-lumen", userId = "local") => {
   try {
     return sessionStorage.getItem(`ifsoul-app-draft:${userId}:${id}`) ?? "";
@@ -194,6 +203,7 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
     loadError?.reason instanceof ApiError &&
     loadError.reason.code === "stored-format-unsupported";
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [operationNotice, setOperationNotice] = useState<string | null>(null);
   const [provider, setProvider] = useState<ProviderId>("scenario");
   const [model, setModel] = useState("");
   const [pending, setPending] = useState<PendingOperation>(null);
@@ -203,6 +213,17 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
   );
   const [characters, setCharacters] = useState<CharacterSummary[]>([]);
   const [characterBusy, setCharacterBusy] = useState(false);
+  const [gameContexts, setGameContexts] = useState<GameContextChoice[]>([]);
+  const [gameContext, setGameContext] = useState<{
+    anchor: string;
+    source: string;
+    scopeRevision: string;
+  } | null>(null);
+  const [linkedSnapshot, setLinkedSnapshot] = useState<LabSnapshot | null>(
+    null,
+  );
+  const linkedDrafts = useRef(new Map<string, string>());
+  const [gameContextError, setGameContextError] = useState(false);
   const selectedCharacter = useRef("character-lumen");
   const selectedMemory = useRef("character-lumen");
   const draftKey = (profile: string, memory: string) =>
@@ -257,7 +278,7 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
   }, [refresh]);
 
   useEffect(() => {
-    if (!snapshot) return;
+    if (!snapshot || gameContext) return;
     try {
       sessionStorage.setItem(
         `ifsoul-app-draft:${auth.userId}:${draftKey(snapshot.persona?.characterId ?? snapshot.character.characterId, snapshot.character.characterId)}`,
@@ -266,7 +287,43 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
     } catch {
       /* The in-memory draft remains available. */
     }
-  }, [draft, snapshot?.character.characterId, snapshot?.persona?.characterId]);
+  }, [
+    draft,
+    gameContext,
+    snapshot?.character.characterId,
+    snapshot?.persona?.characterId,
+  ]);
+  useEffect(() => {
+    if (auth.config.placement !== "local" || section !== "chat" || !snapshot)
+      return;
+    const controller = new AbortController();
+    let busy = false;
+    const load = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const result = await api<{ contexts: GameContextChoice[] }>(
+          "game-continuity?memoryId=" +
+            encodeURIComponent(snapshot.character.characterId),
+          { signal: controller.signal, timeoutMs: 5000 },
+        );
+        if (!controller.signal.aborted) {
+          setGameContexts(result.contexts);
+          setGameContextError(false);
+        }
+      } catch {
+        if (!controller.signal.aborted) setGameContextError(true);
+      } finally {
+        busy = false;
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 5000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [auth.config.placement, section, snapshot?.character.characterId]);
   useEffect(() => {
     if (!pending) {
       setSlow(false);
@@ -291,13 +348,66 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
     !pending &&
     !characterBusy,
   );
+  const eligibleContexts = gameContexts.filter(
+    (item) => item.characterId === selectedCharacter.current,
+  );
+  const gameAnchor = eligibleContexts.find(
+    (item) => item.id === gameContext?.anchor,
+  );
+  const gameSource = eligibleContexts.find(
+    (item) => item.id === gameContext?.source,
+  );
+  const linkedReady =
+    !gameContext ||
+    Boolean(
+      !gameContextError &&
+      gameAnchor &&
+      gameAnchor.scopeRevision === gameContext.scopeRevision &&
+      (!gameContext.source ||
+        gameSource?.playerScope === gameAnchor.playerScope),
+    );
+  useEffect(() => {
+    if (!linkedReady) setLinkedSnapshot(null);
+  }, [linkedReady]);
+  function selectGameContext(anchor: string, source = "") {
+    const entry = eligibleContexts.find((item) => item.id === anchor);
+    if (gameContext) linkedDrafts.current.set(gameContext.anchor, draft);
+    setGameContext(
+      entry ? { anchor, source, scopeRevision: entry.scopeRevision } : null,
+    );
+    setLinkedSnapshot(null);
+    setDraft(
+      entry
+        ? (linkedDrafts.current.get(anchor) ?? "")
+        : readDraft(
+            draftKey(selectedCharacter.current, selectedMemory.current),
+            auth.userId,
+          ),
+    );
+    retry.current = null;
+    setOperationError(null);
+  }
 
   async function run(operation: "plan" | "chat") {
     if (active.current || !ready || (operation === "chat" && !draft.trim()))
       return;
+    if (
+      operation === "chat" &&
+      gameContext &&
+      (!linkedReady || provider === "scenario")
+    )
+      return;
+    const linked =
+      operation === "chat" && gameContext
+        ? {
+            anchor: gameContext.anchor,
+            sources: gameContext.source ? [gameContext.source] : [],
+          }
+        : undefined;
     active.current = true;
     setPending(operation);
     setOperationError(null);
+    setOperationNotice(null);
     const message = operation === "chat" ? draft.trim() : undefined;
     const characterId = selectedCharacter.current;
     const memoryCharacterId = selectedMemory.current;
@@ -308,6 +418,7 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
       provider,
       model: selectedModel,
       message,
+      ...(linked && { gameContext: linked }),
     });
     if (retry.current?.fingerprint !== fingerprint)
       retry.current = { fingerprint, requestId: `web-${crypto.randomUUID()}` };
@@ -325,25 +436,46 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
             provider,
             model: selectedModel,
             ...(message ? { message } : {}),
+            ...(linked && { gameContext: linked }),
           },
         },
       );
-      setSnapshot({
+      const nextSnapshot = {
         character: result.character,
         persona: result.persona,
         memories: result.memories,
         bridgeReflection: result.bridgeReflection,
         runs: result.runs,
-      });
+      };
+      if (linked)
+        setLinkedSnapshot((old) => ({
+          ...nextSnapshot,
+          runs: [
+            ...(old?.runs ?? []).filter(
+              (run) => run.requestId !== result.run.requestId,
+            ),
+            ...result.runs,
+          ].slice(-30),
+        }));
+      else setSnapshot(nextSnapshot);
       if (result.result.type === "failure") {
         retry.current = null; // A recorded failure is resolved; the next explicit attempt gets a new ID.
         throw new ApiError(result.result.error.code);
       }
       retry.current = null;
-      if (operation === "chat") setDraft("");
+      if (operation === "chat") {
+        if (linked) linkedDrafts.current.delete(linked.anchor);
+        setDraft("");
+      }
       return result;
     } catch (reason) {
-      setOperationError(friendlyError(reason));
+      if (
+        reason instanceof ApiError &&
+        ["insufficient-evidence", "clarify-recall"].includes(reason.code)
+      ) {
+        retry.current = null;
+        setOperationNotice(friendlyError(reason));
+      } else setOperationError(friendlyError(reason));
       if (reason instanceof ApiError && reason.code === "unauthorized")
         setStatus((old) => (old ? { ...old, authenticated: false } : old));
     } finally {
@@ -365,6 +497,9 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
       );
       selectedCharacter.current = id;
       selectedMemory.current = memoryId;
+      setGameContext(null);
+      setGameContexts([]);
+      setLinkedSnapshot(null);
       setSnapshot(next);
       setDraft(readDraft(draftKey(id, memoryId), auth.userId));
       retry.current = null;
@@ -399,6 +534,9 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
       ]);
       selectedCharacter.current = next.character.characterId;
       selectedMemory.current = next.character.characterId;
+      setGameContext(null);
+      setGameContexts([]);
+      setLinkedSnapshot(null);
       setSnapshot(next);
       setDraft(readDraft(next.character.characterId, auth.userId));
       retry.current = null;
@@ -553,6 +691,11 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
                     </Button>
                   </div>
                 )}
+                {operationNotice && (
+                  <div className="feedback" role="status">
+                    {operationNotice}
+                  </div>
+                )}
                 {operationError && (
                   <div className="feedback error" role="alert">
                     <span>{operationError}</span>
@@ -673,12 +816,105 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
                       busy={Boolean(pending) || characterBusy}
                       onSelect={chooseCharacter}
                     />
+                    {auth.config.placement === "local" &&
+                      (eligibleContexts.length > 0 ||
+                        gameContext ||
+                        gameContextError) && (
+                        <div className="grid max-w-xl gap-2 py-3">
+                          <Label htmlFor="game-context">
+                            Conversation identity
+                          </Label>
+                          <OptionSelect
+                            id="game-context"
+                            value={
+                              linkedReady ? (gameContext?.anchor ?? "app") : ""
+                            }
+                            onValueChange={(anchor) =>
+                              selectGameContext(anchor)
+                            }
+                            disabled={Boolean(pending) || characterBusy}
+                          >
+                            <SelectItem value="app">
+                              App conversation
+                            </SelectItem>
+                            {eligibleContexts.map((item) => (
+                              <SelectItem key={item.id} value={item.id}>
+                                Continue as {item.playerName} · Mineflayer ·{" "}
+                                {item.worldId.slice(-8)}
+                              </SelectItem>
+                            ))}
+                          </OptionSelect>
+                          {gameAnchor && linkedReady && (
+                            <>
+                              <p className="text-sm text-muted-foreground">
+                                Continuing as {gameAnchor.playerName}. Linked
+                                messages may use the approved game's history and
+                                update this character's relationship with that
+                                player.
+                              </p>
+                              <Label htmlFor="game-other-source">
+                                Additional approved game history
+                              </Label>
+                              <OptionSelect
+                                id="game-other-source"
+                                value={gameContext?.source || "none"}
+                                onValueChange={(source) =>
+                                  selectGameContext(
+                                    gameAnchor.id,
+                                    source === "none" ? "" : source,
+                                  )
+                                }
+                                disabled={Boolean(pending) || characterBusy}
+                              >
+                                <SelectItem value="none">
+                                  Only this connection
+                                </SelectItem>
+                                {eligibleContexts
+                                  .filter(
+                                    (item) =>
+                                      item.id !== gameAnchor.id &&
+                                      item.playerScope ===
+                                        gameAnchor.playerScope,
+                                  )
+                                  .map((item) => (
+                                    <SelectItem key={item.id} value={item.id}>
+                                      {item.playerName} · Mineflayer ·{" "}
+                                      {item.worldId.slice(-8)}
+                                    </SelectItem>
+                                  ))}
+                              </OptionSelect>
+                              {provider === "scenario" && (
+                                <p role="status" className="text-sm">
+                                  Choose an available model to use linked
+                                  conversation.
+                                </p>
+                              )}
+                            </>
+                          )}
+                          {(!linkedReady || gameContextError) && (
+                            <p role="status" className="text-sm">
+                              Game conversation access is unavailable. Choose an
+                              approved connection or return to App conversation.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     <ChatPanel
-                      snapshot={snapshot}
+                      snapshot={
+                        gameContext
+                          ? linkedReady
+                            ? linkedSnapshot
+                            : null
+                          : snapshot
+                      }
                       draft={draft}
                       setDraft={setDraft}
                       pending={pending}
-                      ready={ready}
+                      ready={
+                        ready &&
+                        linkedReady &&
+                        (!gameContext || provider !== "scenario")
+                      }
                       provider={selectedProvider?.label ?? "Provider"}
                       model={selectedModel}
                       onSend={() => void run("chat")}

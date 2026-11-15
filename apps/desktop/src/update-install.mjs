@@ -311,6 +311,76 @@ export async function finishMacUpdate({
   await recoverMacUpdate({ current, statePath, exchange });
 }
 
+export async function rollbackMacTrial({ current, statePath, exchange }) {
+  const state = await readJSON(statePath).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (!state || state.current !== current) return false;
+  if (state.phase === "rejected") return true;
+  if (!safeWorkName(state.workspace))
+    throw Error("Invalid Desktop update recovery record.");
+  if (state.phase === "pending" || state.phase === "booting") {
+    await writeState(statePath, { ...state, phase: "exchange" });
+  } else if (state.phase !== "exchange") {
+    return false;
+  }
+  return (
+    (await recoverMacUpdate({ current, statePath, exchange }))?.phase ===
+    "rejected"
+  );
+}
+
+export async function startMacUpdateSupervisor({ current, statePath }) {
+  const state = await readJSON(statePath);
+  if (state.current !== current || state.phase !== "pending") return false;
+  if (!safeWorkName(state.workspace))
+    throw Error("Invalid Desktop update recovery workspace.");
+  const previous = join(dirname(current), state.workspace, bundleName);
+  if (!sameIdentity(await bundleIdentity(previous), state.previous))
+    throw Error("Saved Desktop bundle changed.");
+  const child = spawn(
+    join(previous, executable),
+    [join(previous, desktopApp, "update-supervisor.mjs"), current, statePath],
+    {
+      detached: true,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
+    },
+  );
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(
+        () => settle(Error("Update supervisor did not start.")),
+        5000,
+      );
+      function settle(error) {
+        clearTimeout(timeout);
+        child.off("message", ready);
+        child.off("exit", exited);
+        child.off("error", settle);
+        if (error) reject(error);
+        else resolve();
+      }
+      function ready(value) {
+        if (value === "ready") settle();
+      }
+      function exited() {
+        settle(Error("Update supervisor exited before startup."));
+      }
+      child.on("message", ready);
+      child.once("exit", exited);
+      child.once("error", settle);
+    });
+  } catch (error) {
+    child.kill();
+    throw error;
+  }
+  child.channel?.unref();
+  child.unref();
+  return true;
+}
+
 export async function installMacUpdate({
   current,
   statePath,

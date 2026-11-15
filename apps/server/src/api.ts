@@ -9,6 +9,8 @@ import {
 } from "./billing.js";
 import { SessionError } from "@ifsoul/core/runtime";
 import type { AppBehaviorAPI } from "./behavior.js";
+import type { createMineflayerGroups } from "./mineflayer-groups.js";
+import type { createGameContinuity } from "./game-continuity.js";
 import {
   bridgeCapabilities,
   validBridgeRequest,
@@ -75,6 +77,8 @@ export interface APIOptions {
   behavior?: AppBehaviorAPI;
   billing?: BillingPort;
   gameConnections?: GameConnectionPort;
+  mineflayerGroups?: ReturnType<typeof createMineflayerGroups>["owner"];
+  gameContinuity?: ReturnType<typeof createGameContinuity>;
   browseGameMemory?: (
     params: URLSearchParams,
   ) => ReturnType<
@@ -265,6 +269,33 @@ export function createAPI(options: APIOptions) {
       });
     if (!auth) return error("unauthorized", "Sign in to continue.", 401);
     if (
+      path === "/api/game-continuity" &&
+      request.method === "GET" &&
+      options.gameContinuity
+    ) {
+      const memoryId = url.searchParams.get("memoryId") ?? "";
+      return Response.json({ contexts: options.gameContinuity.list(memoryId) });
+    }
+    if (path === "/api/game-groups" && options.mineflayerGroups) {
+      if (request.method === "GET")
+        return Response.json(options.mineflayerGroups.inspect());
+      if (request.method === "POST") {
+        try {
+          return Response.json(
+            options.mineflayerGroups.change(
+              (await readBody(4096)) as Record<string, unknown>,
+            ),
+          );
+        } catch {
+          return error(
+            "group-unavailable",
+            "Check your group settings or refresh to see its current state.",
+            409,
+          );
+        }
+      }
+    }
+    if (
       path === "/api/game-connections/control-proof" &&
       request.method === "POST" &&
       options.gameConnections
@@ -443,17 +474,28 @@ export function createAPI(options: APIOptions) {
       path === "/api/behavior/state" &&
       request.method === "GET" &&
       options.behavior
-    )
-      return Response.json(
-        {
-          ok: true,
-          value: await options.behavior.inspect(
-            url.searchParams.get("sessionId") ?? "",
-            url.searchParams.get("npcId") ?? "",
-          ),
-        },
-        { headers: { "Cache-Control": "no-store" } },
-      );
+    ) {
+      try {
+        return Response.json(
+          {
+            ok: true,
+            value: await options.behavior.inspect(
+              url.searchParams.get("sessionId") ?? "",
+              url.searchParams.get("npcId") ?? "",
+            ),
+          },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      } catch (reason) {
+        if (reason instanceof SessionError && reason.code === "unauthorized")
+          return error(
+            "unauthorized",
+            "Select an App Conversation session to view its behavior state.",
+            403,
+          );
+        throw reason;
+      }
+    }
 
     if (path === "/api/resource-policy" && request.method === "GET")
       return Response.json(
@@ -719,10 +761,17 @@ export function createAPI(options: APIOptions) {
           "Use the local laboratory for planning.",
           403,
         );
+      const linked = body.gameContext !== undefined;
+      if (linked && (originalPath !== "/api/chat" || !options.gameContinuity))
+        return error(
+          "forbidden",
+          "This game conversation context is unavailable.",
+          403,
+        );
       busy = true;
       try {
         const behaviorGate =
-          path === "/api/run" && options.behavior
+          path === "/api/run" && options.behavior && !linked
             ? await options.behavior.prepareRun(body)
             : { allowed: true };
         const providers = await options.providers();
@@ -755,7 +804,9 @@ export function createAPI(options: APIOptions) {
           path === "/api/characters/generate" &&
           "listCharacters" in options.service
             ? await options.service.generateCharacter(body)
-            : await options.service.run(body);
+            : linked
+              ? await options.gameContinuity!.run(body, request.signal)
+              : await options.service.run(body);
         return Response.json(result, { status: result.ok ? 200 : 400 });
       } finally {
         busy = false;

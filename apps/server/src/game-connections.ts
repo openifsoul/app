@@ -230,6 +230,8 @@ export function createGameConnectionBroker(options: {
   }
   const inspectKey = (connectionId: string) =>
     `game-inspection-v1:${connectionId}`;
+  const continuityKey = (connectionId: string) =>
+    `game-continuity-v1:${connectionId}`;
   const inspectionIdentity = (binding: GameBinding) =>
     JSON.stringify([
       binding.principalId,
@@ -239,6 +241,25 @@ export function createGameConnectionBroker(options: {
       binding.hostId,
       binding.player?.uuid,
     ]);
+  const continuityIdentity = (binding: GameBinding) =>
+    JSON.stringify([inspectionIdentity(binding), binding.revision]);
+  const continuity = (row: Stored) => {
+    if (
+      row.minecraftTarget ||
+      !row.player ||
+      row.revoked ||
+      row.expiresAt <= now()
+    )
+      return;
+    const entry = options.store.get(continuityKey(row.connectionId));
+    const id = entry?.slice(0, 36);
+    if (
+      id &&
+      /^[0-9a-f-]{36}$/.test(id) &&
+      entry === id + ":" + continuityIdentity(row)
+    )
+      return { id, binding: view(row) };
+  };
   const view = ({
     codeHash,
     codeExpiresAt,
@@ -512,6 +533,30 @@ export function createGameConnectionBroker(options: {
         else options.store.delete(key);
       });
     },
+    setContinuity(token: string, allowed: boolean) {
+      return run((rows) => {
+        const row = lookup(rows, token);
+        if (!row.player || row.minecraftTarget) fail("unauthorized");
+        const key = continuityKey(row.connectionId);
+        if (allowed) {
+          if (!continuity(row))
+            options.store.set(
+              key,
+              randomUUID() + ":" + continuityIdentity(row),
+            );
+        } else options.store.delete(key);
+      });
+    },
+    continuityBindings(principalId: string, memoryId: string) {
+      return run((rows) =>
+        rows.flatMap((row) => {
+          if (row.principalId !== principalId || row.memoryId !== memoryId)
+            return [];
+          const approved = continuity(row);
+          return approved ? [approved] : [];
+        }),
+      );
+    },
     inspection(principalId: string, connectionId: string, memoryId?: string) {
       return run((rows) => {
         const row = rows.find(
@@ -557,6 +602,7 @@ export function createGameConnectionBroker(options: {
         if (!r) fail("unauthorized");
         if (!r.revoked) {
           options.store.delete(inspectKey(id));
+          options.store.delete(continuityKey(id));
           r.revoked = true;
           r.revision++;
         }
@@ -633,6 +679,7 @@ export async function gameDeviceRequest(
     body: Record<string, unknown>,
   ) => Promise<unknown>,
   serverConnectorOnly = false,
+  allowContinuity = false,
 ) {
   const reply = (body: unknown, init?: ResponseInit) =>
     secured(Response.json(body, init));
@@ -655,6 +702,7 @@ export async function gameDeviceRequest(
         "/api/game/device/revoke",
         "/api/game/device/owner-proof",
         "/api/game/device/history-consent",
+        ...(allowContinuity ? ["/api/game/device/continuity-consent"] : []),
       ].includes(path)
     )
       return new Response(null, { status: 404 });
@@ -702,13 +750,18 @@ export async function gameDeviceRequest(
       return reply({ ok: true });
     }
     if (!binding.player) fail("unauthorized");
-    if (path === "/api/game/device/history-consent") {
+    if (
+      path === "/api/game/device/history-consent" ||
+      path === "/api/game/device/continuity-consent"
+    ) {
       if (
         Object.keys(body).some((k) => k !== "allowed") ||
         typeof body.allowed !== "boolean"
       )
         fail("invalid");
-      broker.setInspection(token, body.allowed);
+      if (path === "/api/game/device/continuity-consent")
+        broker.setContinuity(token, body.allowed);
+      else broker.setInspection(token, body.allowed);
       return reply({ ok: true });
     }
     if (path !== "/api/game/device/dialogue") fail("invalid");

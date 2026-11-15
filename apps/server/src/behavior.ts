@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  createBehaviorRuntime,
   createParticipantRuntime,
   DEFAULT_BEHAVIOR_OPERATOR,
   SessionError,
@@ -22,6 +23,8 @@ import {
 
 const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24);
+const appPlayerId = "verified-app-player";
+
 /** Authenticated App composition shares exactly the SDK participant/config store. */
 export function createAppBehavior(options: {
   store: ParticipantStore;
@@ -41,13 +44,60 @@ export function createAppBehavior(options: {
     participants = createParticipantRuntime(options.store, {
       behaviorOperator: ownerOperator,
     });
+  const ordinaryBehavior = createBehaviorRuntime(options.store, {
+    operator: ownerOperator,
+    authorizeEvidence: ({
+      session,
+      sourceSession,
+      targetParticipantId,
+      event,
+    }) =>
+      sourceSession.sessionId === session.sessionId &&
+      sourceSession.hostId === options.access.hostId &&
+      sourceSession.worldId === "app-chat" &&
+      event.channelId === "chat" &&
+      (!targetParticipantId || targetParticipantId === appPlayerId),
+  });
+  function inspectOrdinary(sessionId: string, npcId: string) {
+    const suffix = /^app-([a-f0-9]{24})$/.exec(sessionId)?.[1];
+    if (!suffix || npcId !== `npc-${suffix}`)
+      throw new SessionError("unauthorized");
+    const ownsSession = options.store.transact(
+      options.access.principalId,
+      (s) =>
+        s.sessions.some(
+          (session) =>
+            session.sessionId === sessionId &&
+            session.hostId === options.access.hostId &&
+            session.worldId === "app-chat" &&
+            session.members.some(
+              (member) =>
+                member.participantId === appPlayerId &&
+                member.role === "player",
+            ),
+        ),
+    );
+    if (!ownsSession) throw new SessionError("unauthorized");
+    const inspection = ordinaryBehavior.inspect(
+      options.access,
+      sessionId,
+      npcId,
+    );
+    const ownTarget = (item: { targetParticipantId?: string }) =>
+      !item.targetParticipantId || item.targetParticipantId === appPlayerId;
+    return {
+      ...inspection,
+      values: inspection.values.filter(ownTarget),
+      history: inspection.history.filter(ownTarget),
+    };
+  }
   function ensure(characterId?: string) {
     const snapshot = options.workspace.snapshot(characterId);
     if (!snapshot.ok) throw new SessionError("unauthorized");
     const memoryId = snapshot.value.character.characterId,
       npcId = `npc-${digest(memoryId)}`,
       sessionId = `app-${digest(memoryId)}`,
-      playerId = "verified-app-player";
+      playerId = appPlayerId;
     // Ownership comes from the already authenticated CharacterWorkspace lookup, never profile names/imported IDs.
     participants.register(options.access, {
       participantId: npcId,
@@ -180,11 +230,7 @@ export function createAppBehavior(options: {
         configRevision: inspection.configRevision,
         effective: inspection.effective,
         parameters: inspection.parameters,
-        values: inspection.values.filter(
-          (v) =>
-            !v.targetParticipantId ||
-            v.targetParticipantId === binding.playerId,
-        ),
+        values: inspectOrdinary(binding.sessionId, binding.npcId).values,
       },
       memories: input.memories.filter((memory) => {
         const payload = memory.recordedPayload as { requestId?: string };
@@ -241,7 +287,7 @@ export function createAppBehavior(options: {
           npcIds: [binding.npcId],
           strategy: "rules",
         });
-      const inspection = behavior.inspect(binding.sessionId, binding.npcId);
+      const inspection = inspectOrdinary(binding.sessionId, binding.npcId);
       const policy =
         request.operation === "chat"
           ? behavior.permissions(
@@ -259,11 +305,7 @@ export function createAppBehavior(options: {
           configRevision: inspection.configRevision,
           effective: inspection.effective,
           parameters: inspection.parameters,
-          values: inspection.values.filter(
-            (v) =>
-              !v.targetParticipantId ||
-              v.targetParticipantId === binding.playerId,
-          ),
+          values: inspection.values,
         },
         validate() {
           if (
@@ -332,8 +374,10 @@ export function createAppBehavior(options: {
       expectedRevision: number;
       config: BehaviorConfiguration;
     }) => behavior.port.update(request),
-    inspect: (sessionId: string, npcId: string) =>
-      behavior.port.inspect({ sessionId, npcId }),
+    async inspect(sessionId: string, npcId: string) {
+      if (!ownerOperator.canEditConfig) throw new SessionError("unauthorized");
+      return inspectOrdinary(sessionId, npcId);
+    },
     service: behavior,
   };
 }

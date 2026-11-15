@@ -158,7 +158,10 @@ export function ChatPanel({
                       </div>
                     </MessageContent>
                   </Message>
-                ) : (
+                ) : run.result.type === "failure" &&
+                  ["insufficient-evidence", "clarify-recall"].includes(
+                    run.result.error.code,
+                  ) ? null : (
                   <div className="message failed-message">
                     <p>
                       This attempt did not produce a reply. Your draft remains

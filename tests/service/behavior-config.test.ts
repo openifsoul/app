@@ -1,3 +1,4 @@
+import { createOpenAIProvider } from "@ifsoul/core/model-providers";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -9,6 +10,7 @@ import {
   createParticipantRuntime,
   createBehaviorRuntime,
   DEFAULT_BEHAVIOR_OPERATOR,
+  SessionError,
 } from "@ifsoul/core/runtime";
 import type {
   BehaviorProposal,
@@ -60,11 +62,16 @@ function fixture(path = ":memory:") {
     async generate(request) {
       prompts.push(request.prompt);
       const input = JSON.parse(request.prompt);
+      assert.equal(Object.keys(input).at(-1), "latestUserMessage");
+      assert.equal(input.event.source, "participant-claim");
+      assert.match(request.system, /reporterId is the speaker/);
       const inspection = input.inspection;
-      const delta =
+      const deltaIntent =
         input.kind === "provocation"
-          ? -Number(inspection.npcId.split("-").at(-1))
-          : 3;
+          ? ["-25%", "-50%", "-75%", "-100%", "0%"][
+              Number(inspection.npcId.split("-").at(-1)) - 1
+            ]
+          : "+75%";
       const proposal: BehaviorProposal = {
         proposalId: "model-proposal",
         npcId: inspection.npcId,
@@ -74,8 +81,8 @@ function fixture(path = ":memory:") {
         changes: [
           {
             parameterId: "trust",
-            targetParticipantId: input.event.senderId,
-            delta,
+            targetParticipantId: input.event.reporterId,
+            delta: 0,
             confidence: 0.75,
             evidenceEventIds: [input.event.eventId],
             reason:
@@ -85,7 +92,21 @@ function fixture(path = ":memory:") {
           },
         ],
       };
-      return { ok: true, value: { content: JSON.stringify(proposal) } };
+      return {
+        ok: true,
+        value: {
+          content: JSON.stringify({
+            changes: proposal.changes.map(
+              ({ evidenceEventIds, delta: _delta, ...change }) => ({
+                ...change,
+                deltaIntent,
+                currentEventId: evidenceEventIds[0],
+                priorEvidenceIds: evidenceEventIds.slice(1),
+              }),
+            ),
+          }),
+        },
+      };
     },
   };
   const behavior = createBehaviorService({
@@ -184,7 +205,7 @@ test("five guards share policy, keep individual evidence-linked relations, ignor
         sessionId: "garden",
         npcId: guards[i],
       });
-      assert.equal(inspection.values[0].value, 49 - i);
+      assert.equal(inspection.values[0].value, [48.75, 47.5, 46.25, 45, 50][i]);
       assert.equal(inspection.values[0].confidence, 0.75);
       assert.equal(inspection.values[0].targetParticipantId, "visitor");
       assert.equal(inspection.effective.policy.provocation.speak, false);
@@ -257,7 +278,7 @@ test("five guards share policy, keep individual evidence-linked relations, ignor
       (
         await h.client.inspect({ sessionId: "garden", npcId: guards[0] })
       ).values.find((v) => v.targetParticipantId === "visitor")!.value,
-      52,
+      52.5,
     );
     const historyLength = (
       await h.client.inspect({ sessionId: "garden", npcId: guards[0] })
@@ -862,7 +883,22 @@ test("model schema and runtime agree on target-free transient state versus direc
             body.changes.every((c) => c.targetParticipantId === undefined),
           );
         checked = true;
-        return { ok: true, value: { content: JSON.stringify(body) } };
+        return {
+          ok: true,
+          value: {
+            content: JSON.stringify({
+              changes: body.changes.map(
+                ({ evidenceEventIds, delta: _delta, ...change }) => ({
+                  ...change,
+                  deltaIntent:
+                    change.parameterId === "alertness" ? "+50%" : "+25%",
+                  currentEventId: evidenceEventIds[0],
+                  priorEvidenceIds: evidenceEventIds.slice(1),
+                }),
+              ),
+            }),
+          },
+        };
       },
     };
     const service = createBehaviorService({
@@ -916,7 +952,7 @@ test("model schema and runtime agree on target-free transient state versus direc
     );
     assert.equal(
       after.values.find((v) => v.parameterId === "trust")!.value,
-      51,
+      51.25,
     );
   } finally {
     h.db.close();
@@ -946,5 +982,345 @@ test("the installed SDK artifact preserves definitive policy denial without fall
     assert.equal(speech, 0);
   } finally {
     bridge.dispose();
+  }
+});
+
+test("Russian reflection revisits the same verified player across world chat using both immutable reports", async () => {
+  const h = fixture();
+  try {
+    setup(h);
+    const npcId = guards[0];
+    const first = {
+      ...event("east-gate-first", "Я, посетитель, закрыл восточные ворота.", [
+        npcId,
+      ]),
+      observerIds: [],
+    };
+    const unrelated = {
+      ...event("other-player", "Секрет второго игрока", [npcId]),
+      senderId: "visitor-two",
+      observerIds: [],
+    };
+    await h.behavior.observe({
+      event: first,
+      kind: "helpful",
+      npcIds: [npcId],
+      strategy: "model",
+    });
+    const initial = await h.client.inspect({ sessionId: "garden", npcId });
+    h.participants.transition(access, "move-to-dungeon", 0, {
+      sessionId: "dungeon",
+      revision: 1,
+      hostId: access.hostId,
+      worldId: "dungeon",
+      recallWorldIds: ["garden", "dungeon"],
+      members: [
+        { participantId: npcId, role: "npc" },
+        { participantId: "visitor", role: "player" },
+        { participantId: "visitor-two", role: "player" },
+      ],
+      groups: [],
+      channels: [
+        {
+          channelId: "chat",
+          participantIds: [npcId, "visitor", "visitor-two"],
+        },
+      ],
+    });
+    await h.behavior.observe({
+      event: { ...unrelated, sessionId: "dungeon" },
+      kind: "observation",
+      npcIds: [npcId],
+    });
+    const contrary = {
+      ...event(
+        "east-gate-correction",
+        "Я ошибся: восточные ворота закрыла Лада, а я их не трогал.",
+        [npcId],
+      ),
+      sessionId: "dungeon",
+      observerIds: [],
+    };
+    const reason =
+      "Посетитель исправил атрибуцию, а первый отчёт остаётся в истории.";
+    const priorEvidence = [
+      {
+        eventId: first.eventId,
+        worldId: "garden",
+        reporterId: "visitor",
+        source: "participant-claim" as const,
+        text: first.text,
+      },
+    ];
+    const change = {
+      parameterId: "trust",
+      targetParticipantId: "visitor",
+      deltaIntent: "0%",
+      confidence: 0.5,
+      currentEventId: contrary.eventId,
+      priorEvidenceIds: [first.eventId],
+      reason,
+    };
+    let proposed: object = change;
+    const modelReflection = createBehaviorModelProposer(
+      createOpenAIProvider({
+        apiKey: "synthetic-test-key",
+        fetch: async (_, init) => {
+          const request = JSON.parse(String(init?.body));
+          const prompt = JSON.parse(request.input[0].content);
+          const schema = request.text.format.schema;
+          assert.equal(prompt.event.reporterId, "visitor");
+          assert.equal(prompt.latestUserMessage, contrary.text);
+          assert.deepEqual(prompt.priorEvidence, priorEvidence);
+          assert.match(
+            JSON.stringify(schema),
+            /"currentEventId":\{"type":"string","enum":\["east-gate-correction"\]\}/,
+          );
+          assert.doesNotMatch(JSON.stringify(schema), /"uniqueItems"/);
+          return Response.json({
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                content: [
+                  {
+                    type: "output_text",
+                    text: JSON.stringify({ changes: [proposed] }),
+                  },
+                ],
+              },
+            ],
+          });
+        },
+      }),
+      "gpt-4.1-mini",
+    );
+    const reflection = createBehaviorService({
+      store: h.store,
+      access,
+      operator,
+      proposer: modelReflection,
+    });
+    const reflectionInput = {
+      inspection: initial,
+      event: contrary,
+      kind: "observation" as const,
+      priorEvidence,
+    };
+    for (const invalid of [
+      { ...change, deltaIntent: undefined },
+      { ...change, deltaIntent: "-200%" },
+      { ...change, deltaIntent: -1 },
+      { ...change, delta: -10 },
+      { ...change, parameterId: "unknown" },
+      { ...change, currentEventId: undefined },
+      { ...change, currentEventId: first.eventId },
+      { ...change, priorEvidenceIds: [unrelated.eventId] },
+      { ...change, priorEvidenceIds: [contrary.eventId] },
+      { ...change, priorEvidenceIds: [first.eventId, first.eventId] },
+      { ...change, evidenceEventIds: [first.eventId, contrary.eventId] },
+    ]) {
+      proposed = invalid;
+      await assert.rejects(
+        modelReflection(reflectionInput, new AbortController().signal),
+        /invalid/,
+      );
+    }
+    proposed = { ...change, deltaIntent: "+75%" };
+    const withLimit = (maxDelta: number) => ({
+      ...reflectionInput,
+      inspection: {
+        ...initial,
+        parameters: initial.parameters.map((parameter) =>
+          parameter.parameterId === "trust"
+            ? { ...parameter, maxDelta }
+            : parameter,
+        ),
+      },
+    });
+    await assert.rejects(
+      modelReflection(withLimit(0), new AbortController().signal),
+      /invalid/,
+    );
+    const fractional = (await modelReflection(
+      withLimit(2.5),
+      new AbortController().signal,
+    )) as BehaviorProposal;
+    assert.equal(fractional.changes[0].delta, 1.875);
+    proposed = change;
+    const outcomes = await reflection.observe({
+      event: contrary,
+      kind: "observation",
+      npcIds: [npcId],
+      strategy: "model",
+    });
+    const final = outcomes[0].inspection;
+    assert.equal(
+      final.values.find((value) => value.targetParticipantId === "visitor")
+        ?.value,
+      initial.values[0].value,
+    );
+    assert.equal(
+      final.values.find((value) => value.targetParticipantId === "visitor")
+        ?.confidence,
+      0.5,
+    );
+    assert.equal(
+      final.values.some((value) => value.targetParticipantId === "visitor-two"),
+      false,
+    );
+    assert.deepEqual(final.history.at(-1)?.evidenceEventIds, [
+      contrary.eventId,
+      first.eventId,
+    ]);
+    assert.equal(final.history.at(-1)?.reason, reason);
+    assert.deepEqual(
+      h.store.transact(access.principalId, (state) => state.events),
+      [first, { ...unrelated, sessionId: "dungeon" }, contrary],
+    );
+    const reveal = h.participants.begin(access, {
+      turnId: "recall-east",
+      npcId,
+      eventId: contrary.eventId,
+      sessionId: "dungeon",
+      revision: 1,
+      recipientIds: ["visitor"],
+      observerIds: [],
+    });
+    assert(reveal.memories.some((item) => item.eventId === first.eventId));
+    assert(reveal.memories.some((item) => item.eventId === contrary.eventId));
+    assert(!reveal.memories.some((item) => item.eventId === unrelated.eventId));
+  } finally {
+    h.db.close();
+  }
+});
+
+test("model reflection cannot set proposal identity or revisions", async () => {
+  const h = fixture();
+  try {
+    setup(h);
+    const npcId = guards[0];
+    let observedSchema = false;
+    const model: ModelClient = {
+      id: "openai",
+      async generate(request) {
+        assert.deepEqual(
+          Object.keys((request.schema as { properties: object }).properties),
+          ["changes"],
+        );
+        observedSchema = true;
+        return {
+          ok: true,
+          value: {
+            changes: [],
+            npcId: guards[1],
+            configRevision: 999,
+          },
+        };
+      },
+    };
+    const behavior = createBehaviorService({
+      store: h.store,
+      access,
+      operator,
+      proposer: createBehaviorModelProposer(model, "synthetic"),
+    });
+    const original = event(
+      "rejected-reflection",
+      "This report remains historical evidence.",
+      [npcId],
+    );
+    await assert.rejects(
+      behavior.observe({
+        event: original,
+        kind: "observation",
+        npcIds: [npcId],
+        strategy: "model",
+      }),
+      /invalid/,
+    );
+    assert(observedSchema);
+    assert.deepEqual(
+      h.store.transact(access.principalId, (state) => state.events),
+      [original],
+    );
+    for (const affected of [npcId, guards[1]]) {
+      const inspection = await h.client.inspect({
+        sessionId: "garden",
+        npcId: affected,
+      });
+      assert.equal(inspection.stateRevision, 0);
+      assert.deepEqual(inspection.history, []);
+    }
+  } finally {
+    h.db.close();
+  }
+});
+
+test("linked grant can deny reflection at commit without erasing the authorized original", async () => {
+  const h = fixture();
+  try {
+    setup(h);
+    const npcId = guards[0];
+    let grant = true;
+    const behavior = createBehaviorService({
+      store: h.store,
+      access,
+      operator,
+      validateEvidenceAccess() {
+        if (!grant) throw new SessionError("unauthorized");
+      },
+      proposer: async ({ inspection, event }) => {
+        grant = false;
+        return {
+          proposalId: "revoke-during-model",
+          npcId,
+          sessionId: event.sessionId,
+          configRevision: inspection.configRevision,
+          expectedStateRevision: inspection.stateRevision,
+          changes: [
+            {
+              parameterId: "trust",
+              targetParticipantId: event.senderId,
+              delta: 1,
+              confidence: 0.5,
+              evidenceEventIds: [event.eventId],
+              reason: "Only the current source was cited.",
+            },
+          ],
+        };
+      },
+    });
+    const original = event(
+      "before-linked-revoke",
+      "I reported a helpful event.",
+      [npcId],
+    );
+    await assert.rejects(
+      behavior.observe({
+        event: original,
+        kind: "helpful",
+        npcIds: [npcId],
+        strategy: "model",
+      }),
+      /unauthorized/,
+    );
+    await assert.rejects(
+      behavior.observe({
+        event: { ...original, eventId: "after-linked-revoke" },
+        kind: "helpful",
+        npcIds: [npcId],
+      }),
+      /unauthorized/,
+    );
+    assert.deepEqual(
+      h.store.transact(access.principalId, (state) => state.events),
+      [original],
+    );
+    const inspection = await h.client.inspect({ sessionId: "garden", npcId });
+    assert.deepEqual(inspection.values, []);
+    assert.deepEqual(inspection.history, []);
+  } finally {
+    h.db.close();
   }
 });

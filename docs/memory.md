@@ -323,3 +323,38 @@ When recalling reports across languages, the bridge asks the model to write the
 explanation in the user's language and quote the original names, objects and
 location phrases. Conflicting reports retain separate attributions and
 citations. Prompt packing leaves the retained source records intact.
+
+### Continue as a Mineflayer player in Conversation
+
+The local App and Desktop can continue an individual Mineflayer companion
+conversation with the same character memory and approved player. The player
+must privately whisper `!ifsoul allow-app-chat` to the companion. This
+permission lets the local App operator continue in that specific player
+context. Linked messages can use the approved connection's history and
+update the character's relationship with that player. Owner history
+inspection has separate consent.
+
+In **Conversation**, select the linked character profile and memory, then
+choose **Continue as** with the approved player. You can also select a
+second approved connection with the same verified player and memory.
+Choose an available model for the conversation. The App keeps the game
+claims with their original source and world. It attributes the current App
+message to the selected game participant. Matching reporter identities across
+worlds refer to the same speaker. It presents player reports and prior
+companion dialogue separately. Earlier replies remain available for
+context. A reply or the host that transported a message does not corroborate a
+player's account. An authenticated action outcome with verified receipt
+metadata identifies the observed action, actor and result. Older records
+without that metadata keep their original text. The App describes confirmation
+available from the evidence selected for the current reply. The linked
+conversation has its own App transcript and conversation authority.
+
+A relationship value is directed from the character toward the linked player.
+A pending revision describes a proposed value or confidence change. Prior
+revisions retain their original attribution and source links. When the App
+classifies a request as factual recall and finds no supporting records, it
+shows an insufficient-evidence status without generating a character reply.
+
+The player can withdraw permission via `!ifsoul deny-app-chat`. Link
+access expires with the grant and requires fresh consent when the connection
+is renewed. Ordinary App Conversation keeps its own identity and history.

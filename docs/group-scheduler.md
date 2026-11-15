@@ -47,6 +47,11 @@ before starting any host mechanics. Report actual outcomes separately; only
 explicit reconciliation can release uncertain unadopted work. Local cancellation
 does not guarantee provider-side work or charges have stopped.
 
+The local App uses these ports for [Mineflayer groups](game-connections.md#run-a-mineflayer-group).
+That host supplies its own movement intents, verified actor mappings and
+heartbeat eligibility. The bridge owns game-specific execution and reports
+its observed outcome through the shared scheduler contract.
+
 See [Core contracts and diagrams](https://github.com/openifsoul/core/blob/main/docs/group-scheduler.md)
 for shared-context filtering, capability/DAG checks, clock domains, limits,
 revision fencing and restart semantics. Existing solitary bridge and session

@@ -17,6 +17,7 @@ existing behavior and quotas.
 | Bridge envelope                               | 8,000 bytes                                  | SDK-compatible accepted serialized request           |
 | Local Ollama packed prompt                    | 10,000 bytes                                 | Packing heuristic, **not** provider/context capacity |
 | Other composed packed prompt                  | 21,000 bytes                                 | Existing controller default                          |
+| Local Ollama generation temperature          | 0                                            | Trusted local policy                                 |
 | Local Ollama bridge generation                | 50,000 ms                                    | Requested controller deadline                        |
 | Local Ollama provider / App runtime / browser | 55,000 / 60,000 / 60,000 ms                  | Separate waits                                       |
 | Ollama provider request / response / output   | 200,000 bytes / 100,000 bytes / 2,000 tokens | Core client defaults apart from local wait           |
@@ -29,6 +30,13 @@ request including system text, escaped user JSON and schema. Actual provider
 serialization is independently byte-checked. Ten thousand is a historical local
 latency heuristic, not an API limit or a target to fill exactly. Neither small
 wire size nor a larger configured deadline guarantees valid model completion.
+
+The App sets Ollama generation temperature to `0` for dialogue, structured
+actions and relationship reflection. A local operator can set
+`ollama.temperature` in the policy file to a finite number between `0` and
+`1`. This setting applies to requests made by that App instance. It does not
+modify the installed model. The local `/api/resource-policy` endpoint reports
+the effective setting. Model outputs still require source and scope checks.
 
 ## Example explicit local policy
 
@@ -67,8 +75,11 @@ wire size nor a larger configured deadline guarantees valid model completion.
 
 Replace the model key with an already installed name and choose finite bounds for
 the deployment. These are explicit example settings, not hardware autodetection,
-a universal recommendation or proof that a machine/model can satisfy them. The
-optional estimator is reported as `estimate`; it is not a tokenizer. Available
+a universal recommendation or proof that a machine/model can satisfy them.
+Linked App Conversation uses the configured runtime deadline for the full turn,
+including reflection and reply generation. The browser waits up to the
+configured browser timeout. The optional estimator is reported as `estimate`;
+it is not a tokenizer. Available
 model `modelMaxTokens` metadata is an additional declared ceiling, distinct from
 Ollama's runtime `windowTokens` (`num_ctx`). Unlisted context remains unknown.
 Unknown token usage is not zero and no byte/token equality is asserted.

@@ -1,9 +1,9 @@
 {
   "package": "@ifsoul/core",
-  "version": "0.7.0",
-  "archive": "release070-2ce90f77118c/ifsoul-core-0.7.0.tgz",
-  "sha256": "2ce90f77118c55f99612b7f4325f4df8fe5a817c1e9bce8b69aa39a78528864c",
-  "baseCommit": "e535ebe673627b87bf1cfa4aee809f3f14dc993a",
+  "version": "0.8.0",
+  "archive": "release080-064c750d8010/ifsoul-core-0.8.0.tgz",
+  "sha256": "064c750d8010e2aa315a218b5c9a5f041fab1e91fb46de2126e88abf05e3a73e",
+  "baseCommit": "1c8e3472a51894e0cdd27a34207bf4adaa4a823e",
   "sources": [
     {
       "path": ".editorconfig",
@@ -67,7 +67,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "77956b50d854ee68d2ec0fdb2d8a08b9f49b5b3fd862f8e4a526178e8ce54fd9"
+      "sha256": "d1dcf2d5839e46cff2276eedf518b4f362a4e896a2c5bca37b85d800e67e7f35"
     },
     {
       "path": "SECURITY.md",
@@ -79,7 +79,7 @@
     },
     {
       "path": "docs/behavior.md",
-      "sha256": "31e4c7e6c9b85c8448ae308b11f84732f47288a3211c804b24a578b40ab83750"
+      "sha256": "7a5c431b15b8968273876d1c463091d3cbb249a1044dbef8901db1cd9579b0b5"
     },
     {
       "path": "docs/boundaries.md",
@@ -95,7 +95,7 @@
     },
     {
       "path": "docs/compatibility.md",
-      "sha256": "fedb24b34b389ba3d65e8e0204a7f867081906db66a88aaa850903320585428a"
+      "sha256": "d2f23b54628d8606ff37a00ca79ff91fd492b51b40306002be15636bd8e1965d"
     },
     {
       "path": "docs/decisions/README.md",
@@ -131,7 +131,7 @@
     },
     {
       "path": "docs/providers.md",
-      "sha256": "fbdf1e7d247727d136b6c926a85a4397ad68081f62f743b428803e2145d366d0"
+      "sha256": "c33520395e156f7cb0846068f428bd14d15fdb4e7afa9dfeb0419e41a3fd6fbc"
     },
     {
       "path": "docs/public-private-boundary.md",
@@ -143,7 +143,7 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "b567da874edcb08f28a0c19c71ad7174746c43fc25ee157e5a160e20e79634a1"
+      "sha256": "40fe2dbe6b3e0cd758e79e006a4c81285e727b77f7aac7c0b8436828bee57209"
     },
     {
       "path": "docs/runtime-api.md",
@@ -167,7 +167,7 @@
     },
     {
       "path": "docs/versioning.md",
-      "sha256": "db4adb14eace37b451a32892a0d7173532de70c14257d3936d8e23ea32f490ea"
+      "sha256": "25cea567e532e910db3897f4aab969f12a55e63eeed52bb067120a6068ba029b"
     },
     {
       "path": "docs/web-laboratory.md",
@@ -175,7 +175,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "5751df59ec0a218e72eb96cc776ee4616759faa880be1ad6d9039e3245930c6e"
+      "sha256": "ba68d9d92ef31451bc01d515f5101c2c218cf5ab24ef3be8250b842eb31d9d80"
     },
     {
       "path": "packages/memory/README.md",
@@ -215,11 +215,11 @@
     },
     {
       "path": "packages/model-providers/src/ollama.ts",
-      "sha256": "ab4ce12d9fb1e7c163c958ae1368a78289f00c1dab2ef67778fb368220be7a6d"
+      "sha256": "b4ec696d1512cc8160619c7277c8099d54a461f79d45a9701627061bb1ace58e"
     },
     {
       "path": "packages/model-providers/src/openai.ts",
-      "sha256": "c7a81476c01a6a5328ea39a79f379ccec34d14f20dd37714e4a2dd98dd5e61fd"
+      "sha256": "b02a7235a15e223847bf9b1a0bfa8d3e7823149d32a021632ed4e4d483518104"
     },
     {
       "path": "packages/model-providers/src/types.ts",
@@ -283,7 +283,7 @@
     },
     {
       "path": "packages/protocol/src/index.ts",
-      "sha256": "b9943142ad560005ecaf61d7a248b4954ff6cb41749b8882eb045fdfc4114bbf"
+      "sha256": "ea3d27665f8feafa7f73ac02da8832748b90ae676fdf91e00857f1bef6cdc1dd"
     },
     {
       "path": "packages/protocol/src/resource-policy.ts",
@@ -303,7 +303,7 @@
     },
     {
       "path": "packages/runtime/src/behavior.ts",
-      "sha256": "791bf2b1ed5cbb075a16112c569cffba30eb8d704924b79fb0236619fb61cfc0"
+      "sha256": "042f074e0bfdf7899e5e8d95a380544e7e51fa5ac54d7745c2602f43a99043a7"
     },
     {
       "path": "packages/runtime/src/group-scheduler.ts",
@@ -315,7 +315,7 @@
     },
     {
       "path": "packages/runtime/src/participants.ts",
-      "sha256": "30acedf4c91d0b1fcaef5d1ba5580877399b8c8d061641dee91b402f3d192028"
+      "sha256": "494dab7c0fcc9f43ad09136afd2012a4871467c9752c4097d885ba6f63c064b3"
     },
     {
       "path": "packages/runtime/src/semantics.ts",
@@ -331,7 +331,7 @@
     },
     {
       "path": "release.json",
-      "sha256": "943f1ded9b6e3f5ff4fe0ee1fbdda5826abea8f5b54e4f286f60090f4662da75"
+      "sha256": "1c2ea5302d7b0c447097a18f5c9a8ed2df878e6e52aa7ecfc65a9a67928cac0e"
     },
     {
       "path": "scripts/boundary-analysis.mjs",
@@ -351,7 +351,7 @@
     },
     {
       "path": "scripts/check-version.mjs",
-      "sha256": "3f0e64749740bd30d35718c57c8d7a386765f43bcd734f9ed44f36d223a5d6df"
+      "sha256": "c946343fa6801d54c9dda62f65a4ca185b605c6edbfd306fe58adb2fb29a6bb4"
     },
     {
       "path": "scripts/copy-build-assets.mjs",
@@ -547,7 +547,7 @@
     },
     {
       "path": "tests/providers/providers.test.ts",
-      "sha256": "e5ed45529ffd063403e906bbb74ca1bca16e71050c1e7602739a7835872d2b30"
+      "sha256": "285eb2553361060596a433c934f6ddd4b5a71c2b6dc61857db534d31ead94d1d"
     },
     {
       "path": "tests/providers/resource-policy.test.ts",
@@ -555,7 +555,7 @@
     },
     {
       "path": "tests/runtime/behavior.test.ts",
-      "sha256": "90c2bd263c8058709e593b1059c7083d502516c6daa1bbe0efd74905d27043d2"
+      "sha256": "3636c5582ae26fec18f2c5e5751027c5576c78525df05a03617fad246834eaf8"
     },
     {
       "path": "tests/runtime/group-scheduler.test.ts",
@@ -579,7 +579,7 @@
     },
     {
       "path": "tests/runtime/versioning.test.ts",
-      "sha256": "1efbb6bf964d1c233562f463ad30195464f0af36b9ae881f7e1138ec6f24d1cc"
+      "sha256": "8958467603d70d661dce30a54d991962787c38ce62c9028e297475e4554ce8a6"
     },
     {
       "path": "tests/tooling/boundaries.test.mjs",
@@ -587,7 +587,7 @@
     },
     {
       "path": "tests/tooling/core-package.test.mjs",
-      "sha256": "27726ecf9e30861be516a29732b13a191c25f99be744195e625a97f2ae3b7b1f"
+      "sha256": "6a41dca4219d242e759044b856ed9f82f66b054f2bab5f5ffcadbb4bb834ed60"
     },
     {
       "path": "tsconfig.build.json",

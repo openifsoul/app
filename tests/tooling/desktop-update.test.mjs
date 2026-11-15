@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import {
   mkdir,
@@ -23,6 +24,8 @@ import {
   recoverMacUpdate,
 } from "../../apps/desktop/src/update-install.mjs";
 import { attachDesktopTray } from "../../apps/desktop/src/tray.mjs";
+import { superviseMacTrial } from "../../apps/desktop/src/update-supervisor.mjs";
+import { rollbackMacTrial } from "../../apps/desktop/src/update-install.mjs";
 
 const artifact = Buffer.from("synthetic artifact");
 const sha256 = createHash("sha256").update(artifact).digest("hex");
@@ -226,6 +229,40 @@ test("an interrupted exchange rolls back before the new app starts", async (t) =
   await writeFile(f.statePath, JSON.stringify({ ...state, phase: "exchange" }));
   assert.equal((await recoverMacUpdate(f)).restart, true);
   assert.equal(await f.appBytes(), "old");
+});
+
+test("supervisor restarts the old bundle after early exit or hung candidate", async (t) => {
+  for (const mode of ["early exit", "hang"]) {
+    const f = await fixture(t);
+    await installMacUpdate(f);
+    let candidate;
+    const launches = [];
+    const result = await superviseMacTrial({
+      ...f,
+      startupMs: 500,
+      stopMs: 100,
+      rollback: () => rollbackMacTrial(f),
+      start(_executable, _state, trial) {
+        launches.push(trial);
+        const script = trial
+          ? mode === "hang"
+            ? "process.on('SIGTERM', () => {}); setInterval(() => {}, 100)"
+            : "process.exit(1)"
+          : "";
+        const child = spawn(process.execPath, ["-e", script], {
+          detached: true,
+          stdio: "ignore",
+        });
+        if (trial) candidate = child;
+        return child;
+      },
+    });
+    assert.equal(result, "restored");
+    assert.deepEqual(launches, [true, false]);
+    assert.notEqual(candidate.exitCode ?? candidate.signalCode, null);
+    assert.equal(await f.appBytes(), "old");
+    assert.equal(await f.ownerBytes(), "durable");
+  }
 });
 
 test("tray reopens the existing window and explicit quit permits close", () => {
