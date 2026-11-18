@@ -15,19 +15,21 @@ const player = { name: "Tester", uuid: "11111111-1111-1111-1111-111111111111" };
 function fixture() {
   const data = new Map<string, string>();
   let at = 1000;
-  const broker = createGameConnectionBroker({
-    store: {
-      get: (k) => data.get(k),
-      set: (k, v) => {
-        data.set(k, v);
+  const restartBroker = () =>
+    createGameConnectionBroker({
+      store: {
+        get: (k) => data.get(k),
+        set: (k, v) => {
+          data.set(k, v);
+        },
+        delete: (k) => {
+          data.delete(k);
+        },
       },
-      delete: (k) => {
-        data.delete(k);
-      },
-    },
-    transaction: (f) => f(),
-    now: () => at,
-  });
+      transaction: (f) => f(),
+      now: () => at,
+    });
+  const broker = restartBroker();
   const db = new DatabaseSync(":memory:");
   const store = createSQLParticipantStore(
     {
@@ -54,7 +56,14 @@ function fixture() {
       model: "synthetic",
       character: { id: "profile", name: "Lumen", temperament: "Calm" },
     });
-  return { broker, db, store, grant, advance: () => (at += 301000) };
+  return {
+    broker,
+    restartBroker,
+    db,
+    store,
+    grant,
+    advance: (milliseconds = 301000) => (at += milliseconds),
+  };
 }
 test("single-use expiring code, native-only bearer, owner revoke and no token in owner views", async () => {
   const f = fixture();
@@ -1391,5 +1400,476 @@ test("private follow keeps ranked evidence but presents retained turns in store 
     } finally {
       f.db.close();
     }
+  }
+});
+
+test("generic capability grants fence checkpoints, provider selection, stale revisions, and durable recall receipts", async () => {
+  const f = fixture();
+  const intentId = "museum.adjust-lamp";
+  const manifest = {
+    revision: "1",
+    worldId: "museum",
+    embodimentId: "station-3",
+    capabilities: [
+      {
+        intentId,
+        category: "museum.lighting",
+        description: "Adjust a display lamp",
+        cancellable: true,
+        support: "supported",
+        readiness: "ready",
+        parameters: [
+          { name: "lamp", type: "choice", required: true, choices: ["north"] },
+        ],
+      },
+    ],
+  };
+  const native = f.broker.redeem(f.grant().code);
+  const connection = f.broker.ready(
+    native.token,
+    player,
+    undefined,
+    undefined,
+    manifest,
+  );
+  assert(connection.capability);
+  const request = {
+    id: "lamp-adjustment",
+    providerId: connection.capability.providerId,
+    manifestRevision: "1",
+    policyRevision: 1,
+    intentId,
+    checkpoint: 1,
+    arguments: [{ name: "lamp", value: "north" }],
+  };
+  const authz = {
+    providerId: request.providerId,
+    manifestRevision: "1",
+    policyRevision: 0,
+    allowedIntentIds: [intentId],
+  };
+  function device(body: object, path = "dialogue") {
+    return new Request("https://app.invalid/api/game/device/" + path, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + native.token,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+  let recalled = "";
+  const executor = () =>
+    createGameExecutor({
+      store: f.store,
+      validate: async (b) => f.broker.current(b),
+      clientFor: async () => ({
+        id: "openai",
+        generate: async (input) => {
+          recalled = JSON.stringify(input);
+          return {
+            ok: true,
+            value: {
+              content:
+                '{"speech":"Подтверждена одна лампа. Задание отменено.","reportRefs":[]}',
+            },
+          };
+        },
+      }),
+    });
+  const original = executor();
+  let executeCalls = 0;
+  const send = (body: object, path?: string) =>
+    gameDeviceRequest(device(body, path), f.broker, async (binding, input) => {
+      executeCalls++;
+      return original.execute(binding, input);
+    });
+  const authorize = (overrides?: object) =>
+    send({ operation: "action-check", ...request, ...overrides });
+  try {
+    assert.equal((await authorize()).status, 403);
+    assert.throws(() =>
+      f.broker.setCapabilityPolicy(
+        "another-owner",
+        connection.connectionId,
+        authz,
+      ),
+    );
+    const allowed = f.broker.setCapabilityPolicy(
+      "owner",
+      connection.connectionId,
+      authz,
+    );
+    assert.equal(allowed.capability?.policyRevision, 1);
+    assert.throws(
+      () =>
+        f.broker.setCapabilityPolicy("owner", connection.connectionId, authz),
+      /conflict/,
+    );
+    assert.equal((await authorize({ providerId: "other" })).status, 403);
+    assert.equal((await authorize({ arguments: [] })).status, 403);
+    assert.equal((await authorize()).status, 200);
+    assert.equal((await authorize()).status, 409);
+    assert.equal((await authorize({ checkpoint: 3 })).status, 409);
+    assert.equal((await authorize({ checkpoint: 2 })).status, 200);
+    f.broker.setCapabilityPolicy("owner", connection.connectionId, {
+      ...authz,
+      policyRevision: 1,
+      allowedIntentIds: [],
+    });
+    assert.equal((await authorize({ checkpoint: 3 })).status, 403);
+    const report = {
+      operation: "action-report",
+      id: request.id,
+      reportId: "confirmed-one",
+      providerId: request.providerId,
+      intentId,
+      status: "cancelled",
+      steps: [{ stepId: "changed", summary: "North lamp changed", count: 1 }],
+    };
+    assert.equal((await send(report)).status, 200);
+    assert.equal((await send(report)).status, 200);
+    assert.equal((await send({ ...report, status: "succeeded" })).status, 409);
+    assert.equal(executeCalls, 1);
+    const reconnected = f.broker.ready(
+      native.token,
+      player,
+      undefined,
+      undefined,
+      manifest,
+    );
+    assert.notEqual(reconnected.capability?.providerId, request.providerId);
+    assert.equal((await authorize({ checkpoint: 4 })).status, 403);
+    assert.equal((await send(report)).status, 403);
+    const next = executor();
+    const history = next.history(reconnected);
+    assert.equal(history.length, 1);
+    assert.match(
+      history[0]!.text,
+      /Late report.*North lamp changed.*observed count 1/,
+    );
+    const response = await next.execute(reconnected, {
+      requestId: "russian-recall",
+      text: "Что было сделано с лампой?",
+    });
+    assert.match(response.speech ?? "", /Подтверждена одна лампа/);
+    assert.match(recalled, /observedSteps/);
+    assert.match(recalled, /North lamp changed/);
+    assert.match(recalled, /cancelled/);
+    const restarted = f.restartBroker();
+    const afterRestart = restarted.ready(
+      native.token,
+      player,
+      undefined,
+      undefined,
+      manifest,
+    );
+    assert(afterRestart.capability);
+    const current = {
+      providerId: afterRestart.capability.providerId,
+      manifestRevision: manifest.revision,
+      policyRevision: afterRestart.capability.policyRevision,
+    };
+    restarted.setCapabilityPolicy("owner", afterRestart.connectionId, {
+      ...current,
+      allowedIntentIds: [intentId],
+    });
+    assert.throws(
+      () =>
+        restarted.authorizeCapability(native.token, {
+          ...request,
+          ...current,
+          policyRevision: current.policyRevision + 1,
+        }),
+      /conflict/,
+    );
+    const removed = restarted.updateCapabilities(
+      native.token,
+      current.providerId,
+      {
+        ...manifest,
+        revision: "2",
+        capabilities: [],
+      },
+    );
+    assert.deepEqual(removed.capability?.allowedIntentIds, []);
+    assert.throws(
+      () =>
+        restarted.updateCapabilities(
+          native.token,
+          current.providerId,
+          manifest,
+        ),
+      /conflict/,
+    );
+    const grantedAgain = restarted.updateCapabilities(
+      native.token,
+      current.providerId,
+      { ...manifest, revision: "3" },
+    );
+    assert.deepEqual(grantedAgain.capability?.allowedIntentIds, []);
+    assert.throws(() => restarted.ready(native.token, player));
+    f.advance();
+    assert.equal(restarted.list("owner")[0]?.capabilityOffline, true);
+    assert.throws(() =>
+      restarted.updateCapabilities(native.token, current.providerId, {
+        ...manifest,
+        revision: "3",
+      }),
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("native shared dialogue is audience-scoped with one-shot current delivery and no private memories", async () => {
+  const { broker, store, db, advance } = fixture();
+  const target = {
+    connector: "minecraft-citizens" as const,
+    npcId: "22222222-2222-2222-2222-222222222222",
+    playerId: player.uuid,
+  };
+  const grant = broker.create("owner", {
+    characterId: "profile",
+    memoryId: "memory",
+    provider: "openai",
+    model: "synthetic",
+    character: { id: "profile", name: "Lumen", temperament: "Calm" },
+    minecraftTarget: target,
+  });
+  const { token } = broker.redeem(grant.code);
+  const manifest = {
+    revision: "1",
+    worldId: "test-world",
+    embodimentId: target.npcId,
+    capabilities: [],
+    channels: ["private", "group", "public"].map((channel) => ({
+      channel,
+      listen: true,
+      react: true,
+      speak: true,
+    })),
+  };
+  const binding = broker.ready(
+    token,
+    player,
+    {
+      connector: target.connector,
+      loader: "Paper",
+      version: "1.21.4",
+      upstream: "2.0.37-b3763",
+      npcId: target.npcId,
+    },
+    undefined,
+    manifest,
+  );
+  assert(binding.capability);
+  const prompts: string[] = [];
+  let overrideContent: string | undefined;
+  let hold: { start: () => void; finish: Promise<void> } | undefined;
+  const executor = createGameExecutor({
+    store,
+    validate: async (candidate) => broker.current(candidate),
+    clientFor: async () => ({
+      id: "openai",
+      generate: async ({ prompt }) => {
+        prompts.push(prompt);
+        const active = hold;
+        if (active) {
+          active.start();
+          await active.finish;
+        }
+        return {
+          ok: true,
+          value: {
+            content:
+              overrideContent ??
+              JSON.stringify({ speech: "Test reply", reportRefs: [] }),
+          },
+        };
+      },
+    }),
+  });
+  const send = async (body: object) =>
+    gameDeviceRequest(
+      new Request("http://127.0.0.1:8788/api/game/device/dialogue", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer " + token,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+      broker,
+      (current, request) => executor.execute(current, request),
+    );
+  const setShared = (revision: number, react: boolean) =>
+    broker.setCapabilityPolicy("owner", binding.connectionId, {
+      providerId: binding.capability!.providerId,
+      manifestRevision: "1",
+      policyRevision: revision,
+      allowedIntentIds: [],
+      channelPolicy: {
+        fallback: "silence",
+        channels: [
+          { channel: "private", listen: true, react: true, speak: true },
+          { channel: "group", listen: true, react, speak: react },
+          { channel: "public", listen: true, react, speak: react },
+        ],
+      },
+    });
+  try {
+    assert.equal(
+      (await send({ requestId: "private", text: "private-only-secret-marker" }))
+        .status,
+      200,
+    );
+    const group = {
+      requestId: "group-first",
+      text: "shared group marker",
+      channel: "group",
+      audienceKey: "a".repeat(64),
+    };
+    assert.equal((await (await send(group)).json()).unavailable, true);
+    assert.equal(prompts.length, 1);
+    setShared(0, false);
+    assert.equal((await (await send(group)).json()).unavailable, true);
+    assert.equal(prompts.length, 1);
+    assert(
+      store.transact("owner", (state) =>
+        state.events.some(
+          (event) => event.channelId === "group" && event.text === group.text,
+        ),
+      ),
+    );
+    setShared(1, true);
+    const priorNpcReplies = () =>
+      store.transact(
+        "owner",
+        (state) =>
+          state.events.filter(
+            (event) =>
+              event.channelId === "group" && event.eventId.startsWith("a-"),
+          ).length,
+      );
+    const beforeInvalid = priorNpcReplies();
+    for (const [requestId, content] of [
+      ["group-invalid-structured", "{not-json"],
+      [
+        "group-unsafe-speech",
+        JSON.stringify({
+          speech: "A reply\nwith a forbidden line break",
+          reportRefs: [],
+        }),
+      ],
+    ] as const) {
+      overrideContent = content;
+      const invalid = await send({ ...group, requestId });
+      assert.equal(invalid.status, 403);
+      assert.equal((await invalid.json()).error.code, "connection-unavailable");
+      assert.equal(priorNpcReplies(), beforeInvalid);
+    }
+    overrideContent = undefined;
+    const output = await (
+      await send({ ...group, requestId: "group-second" })
+    ).json();
+    assert.equal(output.destination, "group");
+    assert.match(prompts.at(-1)!, /shared group marker/);
+    assert.doesNotMatch(prompts.at(-1)!, /private-only-secret-marker/);
+    const proof = {
+      operation: "channel-delivery-check",
+      requestId: "group-second",
+      channel: "group",
+      audienceKey: group.audienceKey,
+      ...output.authority,
+    };
+    assert.notEqual(
+      (await send({ ...proof, audienceKey: "b".repeat(64) })).status,
+      200,
+    );
+    assert.equal((await (await send(proof)).json()).authorized, true);
+    assert.notEqual((await send(proof)).status, 200);
+    const other = await (
+      await send({
+        ...group,
+        requestId: "other",
+        channel: "public",
+        text: "public only",
+      })
+    ).json();
+    assert.equal(other.destination, "public");
+    assert.doesNotMatch(
+      prompts.at(-1)!,
+      /private-only-secret-marker|shared group marker/,
+    );
+    async function heldTurn(requestId: string, during: () => void) {
+      let start!: () => void;
+      let finish!: () => void;
+      const started = new Promise<void>((resolve) => (start = resolve));
+      hold = {
+        start,
+        finish: new Promise<void>((resolve) => (finish = resolve)),
+      };
+      const pending = send({ ...group, requestId });
+      try {
+        await started;
+        during();
+      } finally {
+        hold = undefined;
+        finish();
+      }
+      return pending;
+    }
+    const renew = () =>
+      broker.updateCapabilities(
+        token,
+        binding.capability!.providerId,
+        manifest,
+      );
+    const slow = await heldTurn("slow-with-heartbeats", () => {
+      advance(15000);
+      renew();
+      advance(15000);
+      renew();
+      advance(12000);
+    });
+    assert.equal((await slow.json()).destination, "group");
+
+    setShared(2, false);
+    assert.notEqual(
+      (
+        await send({
+          ...proof,
+          ...other.authority,
+          requestId: "other",
+          channel: "public",
+        })
+      ).status,
+      200,
+    );
+    setShared(3, true);
+    const revoked = await heldTurn("slow-revoked", () => setShared(4, false));
+    assert(!(await revoked.json()).speech);
+    setShared(5, true);
+    const changed = await heldTurn("slow-replaced-manifest", () => {
+      broker.updateCapabilities(token, binding.capability!.providerId, {
+        ...manifest,
+        revision: "2",
+      });
+    });
+    assert(!(await changed.json()).speech);
+
+    const disconnected = await heldTurn("slow-without-heartbeat", () => {
+      advance(31000);
+      assert.throws(() =>
+        broker.updateCapabilities(token, binding.capability!.providerId, {
+          ...manifest,
+          revision: "2",
+        }),
+      );
+    });
+    assert(!(await disconnected.json()).speech);
+  } finally {
+    db.close();
   }
 });

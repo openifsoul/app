@@ -67,6 +67,8 @@ test("public App has no private/account package, sibling import or browser backe
   const manifest = JSON.parse(
     readFileSync(resolve(root, "package.json"), "utf8"),
   );
+  assert.ok(manifest.files.includes("dist/server"));
+  assert.ok(manifest.files.includes("dist/web"));
   for (const [name, version] of Object.entries({
     ...manifest.dependencies,
     ...manifest.devDependencies,

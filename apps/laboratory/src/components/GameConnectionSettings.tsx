@@ -1,3 +1,4 @@
+import { GameCapabilities } from "./GameCapabilities";
 import { desktopBridge } from "../lib/desktop";
 import { OptionSelect, SelectItem } from "./ui/select";
 import { useEffect, useRef, useState } from "react";
@@ -20,7 +21,8 @@ import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import {
-  COMPANION_ORIGIN,
+  companionOrigin,
+  type CompanionPort,
   CompanionRequestError,
   commandCompanion,
   configureCompanion,
@@ -29,6 +31,7 @@ import {
   pairCompanion,
   readCompanionStatus,
   readGameConnections,
+  useGameConnectionRefresh,
   readOwnedCharacters,
   revokeGameConnection,
   type CharacterSummary,
@@ -70,20 +73,29 @@ function phase(status: CompanionStatus) {
           : "Check companion status"));
 }
 export function GameConnectionSettings({
+  active,
   providers,
   selectedProvider,
   selectedModel,
 }: {
+  active: boolean;
   providers: ProviderOption[];
   selectedProvider: string;
   selectedModel: string;
 }) {
   const auth = useRuntimeAuth();
+  const [companionPort, setCompanionPort] = useState<CompanionPort>("8811");
   const [characters, setCharacters] = useState<CharacterSummary[]>([]),
     [connections, setConnections] = useState<GameBinding[]>([]),
     [loadingService, setLoadingService] = useState(true),
     [serviceFailure, setServiceFailure] = useState<string | null>(null),
     [serviceReady, setServiceReady] = useState(false);
+  useGameConnectionRefresh(
+    active && serviceReady,
+    setConnections,
+    null,
+    auth.userId,
+  );
   const [characterId, setCharacterId] = useState(""),
     [memoryId, setMemoryId] = useState(""),
     [provider, setProvider] = useState<GamePairRequest["provider"]>(
@@ -196,7 +208,9 @@ export function GameConnectionSettings({
       );
     }
     if (rows.status === "fulfilled") {
-      setConnections(rows.value.connections);
+      setConnections(
+        rows.value.connections.filter((row) => !row.minecraftTarget),
+      );
       setServiceReady(true);
     } else setServiceReady(false);
     if (library.status === "rejected" || rows.status === "rejected")
@@ -268,7 +282,11 @@ export function GameConnectionSettings({
     statusController.current = current;
     setLoadingStatus(true);
     try {
-      const next = await readCompanionStatus(token(), current.signal);
+      const next = await readCompanionStatus(
+        token(),
+        current.signal,
+        companionPort,
+      );
       if (!current.signal.aborted) {
         adoptStatus(next);
         setCompanionFailure(null);
@@ -364,7 +382,7 @@ export function GameConnectionSettings({
       }
       const grant = approval?.expiresAt
         ? { controlToken: "desktop", expiresAt: approval.expiresAt }
-        : await pairCompanion(pairCode.trim(), current.signal);
+        : await pairCompanion(pairCode.trim(), current.signal, companionPort);
       if (current.signal.aborted) return;
       controlToken.current = grant.controlToken;
       setControlExpires(grant.expiresAt);
@@ -372,6 +390,7 @@ export function GameConnectionSettings({
       const next = await readCompanionStatus(
         grant.controlToken,
         current.signal,
+        companionPort,
       );
       if (!current.signal.aborted) {
         adoptStatus(next);
@@ -437,10 +456,18 @@ export function GameConnectionSettings({
         botName,
         playerName,
       };
-      await configureCompanion(access, grant.code, minecraft, current.signal);
+      await configureCompanion(
+        access,
+        grant.code,
+        minecraft,
+        current.signal,
+        companionPort,
+      );
       if (current.signal.aborted) return;
       hydrated.current = true;
-      adoptStatus(await readCompanionStatus(access, current.signal));
+      adoptStatus(
+        await readCompanionStatus(access, current.signal, companionPort),
+      );
       setNotice(
         "Connection saved by the companion. Start it when the Minecraft server and your player are ready.",
       );
@@ -469,7 +496,7 @@ export function GameConnectionSettings({
     setNotice(null);
     try {
       const access = token();
-      await commandCompanion(access, command, current.signal);
+      await commandCompanion(access, command, current.signal, companionPort);
       if (current.signal.aborted) return;
       if (command === "clear") {
         setConfirmClear(false);
@@ -479,7 +506,9 @@ export function GameConnectionSettings({
         setDefense(false);
         setTrusted(false);
       }
-      adoptStatus(await readCompanionStatus(access, current.signal));
+      adoptStatus(
+        await readCompanionStatus(access, current.signal, companionPort),
+      );
       setNotice(
         command === "clear"
           ? "Local companion configuration cleared. Any old service connection can be revoked in its owning App."
@@ -510,7 +539,7 @@ export function GameConnectionSettings({
         companion?.config?.connection.connectionId === connection.connectionId
       ) {
         try {
-          await commandCompanion(token(), "stop");
+          await commandCompanion(token(), "stop", undefined, companionPort);
           await refreshStatus();
         } catch {
           setCompanionFailure(
@@ -598,6 +627,37 @@ export function GameConnectionSettings({
                   }
                 </code>
               </pre>
+              <div className="grid gap-2">
+                <Label htmlFor="companion-instance">
+                  Local companion instance
+                </Label>
+                <OptionSelect
+                  id="companion-instance"
+                  value={companionPort}
+                  disabled={localBusy}
+                  onValueChange={(value) => {
+                    if (
+                      value !== "8811" &&
+                      value !== "8812" &&
+                      value !== "8813"
+                    )
+                      return;
+                    pauseStatusReads();
+                    controlToken.current = null;
+                    hydrated.current = false;
+                    setControlExpires(0);
+                    setCompanion(null);
+                    setPairCode("");
+                    setNotice(null);
+                    setCompanionFailure(null);
+                    setCompanionPort(value);
+                  }}
+                >
+                  <SelectItem value="8811">Instance 1 (8811)</SelectItem>
+                  <SelectItem value="8812">Instance 2 (8812)</SelectItem>
+                  <SelectItem value="8813">Instance 3 (8813)</SelectItem>
+                </OptionSelect>
+              </div>
               <p className="text-sm text-muted-foreground">
                 Open the local consent page, enter and approve this exact App
                 origin, then copy its one-use code here. The browser does not
@@ -606,7 +666,7 @@ export function GameConnectionSettings({
               <div className="flex flex-wrap items-center gap-3">
                 <Button asChild variant="outline" className="min-h-11">
                   <a
-                    href={COMPANION_ORIGIN + "/"}
+                    href={companionOrigin(companionPort) + "/"}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -1173,6 +1233,19 @@ export function GameConnectionSettings({
                       · expires{" "}
                       {new Date(connection.expiresAt).toLocaleString()}
                     </p>
+                    <GameCapabilities
+                      connection={connection}
+                      refresh={loadService}
+                      onUpdate={(updated) =>
+                        setConnections((previous) =>
+                          previous.map((row) =>
+                            row.connectionId === updated.connectionId
+                              ? updated
+                              : row,
+                          ),
+                        )
+                      }
+                    />
                     {!connection.revoked &&
                       !expired &&
                       (revokeId === connection.connectionId ? (

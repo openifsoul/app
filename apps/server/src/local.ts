@@ -399,6 +399,9 @@ const mineflayerGroups = selfHosted
       store: participantStore,
       bindings: () => gameBroker.list("local-owner"),
       clientFor: (binding) => clientFor(binding),
+      broker: gameBroker,
+      privateStore: store,
+      executeGame: (binding, body) => gameExecutor.execute(binding, body),
     });
 const ownerAPI = createAPI({
   mode: "local",
@@ -451,6 +454,8 @@ const ownerAPI = createAPI({
       return gameExecutor.history(binding);
     },
     list: async () => gameBroker.list("local-owner"),
+    capabilities: async (id, input) =>
+      gameBroker.setCapabilityPolicy("local-owner", id, input),
     pair: async (input) =>
       gameBroker.create(
         "local-owner",
@@ -551,7 +556,7 @@ const api = async (request: Request, serverConnectorOnly: boolean) => {
     )
       return secured(new Response(null, { status: 403 }));
     try {
-      const body = (await boundedJSON(request, 4096)) as Record<
+      const body = (await boundedJSON(request, 24_576)) as Record<
         string,
         unknown
       >;
@@ -585,6 +590,7 @@ const api = async (request: Request, serverConnectorOnly: boolean) => {
 const devicePaths = new Set([
   "/api/game/device/redeem",
   "/api/game/device/ready",
+  "/api/game/device/capabilities",
   "/api/game/device/dialogue",
   "/api/game/device/revoke",
   "/api/game/device/owner-proof",
@@ -783,7 +789,7 @@ const server = createServer(async (req, res) => {
         response.headers.set(
           "Content-Security-Policy",
           policy.replace(
-            "connect-src 'self' http://127.0.0.1:8811",
+            "connect-src 'self' http://127.0.0.1:8811 http://127.0.0.1:8812 http://127.0.0.1:8813",
             "connect-src 'self'",
           ),
         );

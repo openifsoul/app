@@ -1,3 +1,4 @@
+import { GameConnectionError } from "./game-connections.js";
 import type {
   GameConnectionPort,
   GamePairRequest,
@@ -276,6 +277,12 @@ export function createAPI(options: APIOptions) {
       const memoryId = url.searchParams.get("memoryId") ?? "";
       return Response.json({ contexts: options.gameContinuity.list(memoryId) });
     }
+    if (
+      path === "/api/game-groups/adventure" &&
+      request.method === "GET" &&
+      options.mineflayerGroups
+    )
+      return Response.json(options.mineflayerGroups.adventure());
     if (path === "/api/game-groups" && options.mineflayerGroups) {
       if (request.method === "GET")
         return Response.json(options.mineflayerGroups.inspect());
@@ -329,6 +336,36 @@ export function createAPI(options: APIOptions) {
             400,
           );
         }
+      }
+    }
+    if (
+      path.startsWith("/api/game-connections/") &&
+      path.endsWith("/capabilities") &&
+      request.method === "PUT" &&
+      options.gameConnections?.capabilities
+    ) {
+      try {
+        const input = await readBody(8192);
+        return Response.json({
+          connection: await options.gameConnections.capabilities(
+            path.slice(
+              "/api/game-connections/".length,
+              -"/capabilities".length,
+            ),
+            input,
+          ),
+        });
+      } catch (cause) {
+        if (
+          cause instanceof GameConnectionError &&
+          ["conflict", "expired"].includes(cause.code)
+        )
+          return error(
+            "conflict",
+            "The host or permissions changed. Refresh this connection and retry.",
+            409,
+          );
+        return error("forbidden", "These permissions could not be saved.", 403);
       }
     }
     if (

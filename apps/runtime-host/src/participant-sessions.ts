@@ -85,6 +85,11 @@ export function createSQLParticipantStore(
   );
   const validField = (value: unknown): value is string =>
     typeof value === "string" && /^[a-z-]{1,48}$/.test(value);
+  const validAction = (value: unknown): value is string =>
+    validField(value) ||
+    (typeof value === "string" &&
+      value.length <= 128 &&
+      /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+$/.test(value));
   function matches(
     row: ReturnType<typeof readOutcome.get>,
     access: SessionAccess,
@@ -134,7 +139,7 @@ export function createSQLParticipantStore(
     appendGameOutcome(access, connectionId, event, outcome) {
       if (
         event.sessionId !== `session-${connectionId}` ||
-        !validField(outcome.action) ||
+        !validAction(outcome.action) ||
         !validField(outcome.result)
       )
         throw new SessionError("invalid");
@@ -146,11 +151,12 @@ export function createSQLParticipantStore(
             );
             const previous = readOutcome.get(principalId, event.eventId);
             if (
-              previous &&
-              (!exists ||
-                !matches(previous, access, connectionId, event) ||
-                previous.action !== outcome.action ||
-                previous.result !== outcome.result)
+              (exists && !previous && outcome.action.includes(".")) ||
+              (previous &&
+                (!exists ||
+                  !matches(previous, access, connectionId, event) ||
+                  previous.action !== outcome.action ||
+                  previous.result !== outcome.result))
             )
               throw new SessionError("conflict");
             const result = work(state);
@@ -177,7 +183,7 @@ export function createSQLParticipantStore(
         event.sessionId !== `session-${connectionId}` ||
         !row ||
         !matches(row, access, connectionId, event) ||
-        !validField(row.action) ||
+        !validAction(row.action) ||
         !validField(row.result)
       )
         return undefined;

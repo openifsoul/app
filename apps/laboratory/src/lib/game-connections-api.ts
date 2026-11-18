@@ -1,3 +1,4 @@
+import { useEffect, type Dispatch, type SetStateAction } from "react";
 import type {
   GameBinding,
   GameGrant,
@@ -7,7 +8,12 @@ import type { CharacterSummary } from "../../../runtime-host/src/service-types";
 import { api, ApiError } from "./api";
 import { desktopBridge } from "./desktop";
 export type { GameBinding, GameGrant, GamePairRequest, CharacterSummary };
-export const COMPANION_ORIGIN = "http://127.0.0.1:8811";
+export type CompanionPort = "8811" | "8812" | "8813";
+export function companionOrigin(port: CompanionPort) {
+  if (!["8811", "8812", "8813"].includes(port))
+    throw new CompanionRequestError("forbidden");
+  return `http://127.0.0.1:${port}`;
+}
 export interface MinecraftConnection {
   host: string;
   port: number;
@@ -38,6 +44,68 @@ export interface CompanionControl {
 }
 export const readGameConnections = (signal?: AbortSignal) =>
   api<{ connections: GameBinding[] }>("game-connections", { signal });
+/** Refresh native lease and manifest evidence while connector settings are visible. */
+export function useGameConnectionRefresh(
+  active: boolean,
+  setConnections: Dispatch<SetStateAction<GameBinding[]>>,
+  connector: NonNullable<GameBinding["minecraftTarget"]>["connector"] | null,
+  userId?: string | null,
+) {
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    let busy = false;
+    async function refresh() {
+      if (busy || document.visibilityState !== "visible") return;
+      busy = true;
+      try {
+        const { connections } = await readGameConnections(controller.signal);
+        if (controller.signal.aborted) return;
+        setConnections((previous) => {
+          const current = new Map(
+            previous.map((row) => [row.connectionId, row]),
+          );
+          return connections
+            .filter((row) =>
+              connector === null
+                ? !row.minecraftTarget
+                : row.minecraftTarget?.connector === connector,
+            )
+            .map((incoming) => {
+              const prior = current.get(incoming.connectionId);
+              if (!prior) return incoming;
+              if (prior.revision > incoming.revision) return prior;
+              if (
+                prior.revision === incoming.revision &&
+                prior.capability &&
+                incoming.capability &&
+                prior.capability.providerId ===
+                  incoming.capability.providerId &&
+                (prior.capability.policyRevision >
+                  incoming.capability.policyRevision ||
+                  Number(prior.capability.manifest.revision) >
+                    Number(incoming.capability.manifest.revision))
+              )
+                return prior;
+              return incoming;
+            });
+        });
+      } catch {
+        // The lease expires locally when the service cannot be reached.
+      } finally {
+        busy = false;
+      }
+    }
+    const timer = setInterval(() => void refresh(), 10_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [active, connector, setConnections, userId]);
+}
+
 export const readOwnedCharacters = (signal?: AbortSignal) =>
   api<CharacterSummary[]>("characters", { signal });
 export const createGameConnection = (
@@ -53,7 +121,12 @@ export class CompanionRequestError extends Error {
 }
 async function localRequest<T>(
   path: string,
-  options: { token?: string; body?: unknown; signal?: AbortSignal } = {},
+  options: {
+    token?: string;
+    body?: unknown;
+    signal?: AbortSignal;
+    port?: CompanionPort;
+  } = {},
 ): Promise<T> {
   const timeout = AbortSignal.timeout(15000);
   const signal = options.signal
@@ -62,7 +135,9 @@ async function localRequest<T>(
   try {
     const desktop = desktopBridge();
     const response = await fetch(
-      (desktop ? "/api/desktop/companion" : COMPANION_ORIGIN) + path,
+      (desktop
+        ? "/api/desktop/companion"
+        : companionOrigin(options.port ?? "8811")) + path,
       {
         method: options.body === undefined ? "GET" : "POST",
         mode: "cors",
@@ -102,6 +177,7 @@ async function localRequest<T>(
 export async function pairCompanion(
   code: string,
   signal?: AbortSignal,
+  port?: CompanionPort,
 ): Promise<CompanionControl> {
   const proof = await api<{ code: string; expiresAt: number }>(
     "game-connections/control-proof",
@@ -118,6 +194,7 @@ export async function pairCompanion(
   const value = await localRequest<CompanionControl>("/pair", {
     body: { code, ownerProof: proof.code },
     signal,
+    port,
   });
   if (
     typeof value.controlToken !== "string" ||
@@ -129,28 +206,35 @@ export async function pairCompanion(
     throw new CompanionRequestError("invalid-response");
   return value;
 }
-export const readCompanionStatus = (token: string, signal?: AbortSignal) =>
-  localRequest<CompanionStatus>("/status", { token, signal });
+export const readCompanionStatus = (
+  token: string,
+  signal?: AbortSignal,
+  port?: CompanionPort,
+) => localRequest<CompanionStatus>("/status", { token, signal, port });
 export const configureCompanion = (
   token: string,
   pairCode: string,
   minecraft: MinecraftConnection,
   signal?: AbortSignal,
+  port?: CompanionPort,
 ) =>
   localRequest<unknown>("/configure", {
     token,
     body: { serviceEndpoint: window.location.origin, pairCode, minecraft },
     signal,
+    port,
   });
 export const commandCompanion = (
   token: string,
   command: "start" | "stop" | "reconnect" | "clear",
   signal?: AbortSignal,
+  port?: CompanionPort,
 ) =>
   localRequest<unknown>("/" + command, {
     token,
     body: command === "clear" ? { consent: true } : {},
     signal,
+    port,
   });
 export function gameConnectionError(error: unknown, companion = false): string {
   const code =

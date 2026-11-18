@@ -119,3 +119,9 @@ The [App releases page](https://github.com/openifsoul/app/releases) is the
 distribution point for unsigned test builds for macOS on Apple silicon and
 Windows x64. Windows native execution is untested. Windows test builds use manual updates. The macOS updater offers only newer
 compatible releases verified by its embedded key.
+
+See [host capability discovery](docs/host-capabilities.md) for connected-host
+action descriptors and their authorization and reporting lifecycle.
+
+See [the group adventure guide](docs/group-adventure.md) for addressed group
+turns, native assignments and the local operator trace.

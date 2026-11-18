@@ -15,11 +15,11 @@ importers:
         specifier: 2.1.2
         version: 2.1.2(gsap@3.15.1)(react@19.3.1)
       '@ifsoul/adapter-sdk':
-        specifier: file:vendor/release080-09b15a20d5af/ifsoul-adapter-sdk-0.8.0.tgz
-        version: file:vendor/release080-09b15a20d5af/ifsoul-adapter-sdk-0.8.0.tgz
+        specifier: file:vendor/release090-351fcbf5d832/ifsoul-adapter-sdk-0.9.0.tgz
+        version: file:vendor/release090-351fcbf5d832/ifsoul-adapter-sdk-0.9.0.tgz
       '@ifsoul/core':
-        specifier: file:vendor/release080-064c750d8010/ifsoul-core-0.8.0.tgz
-        version: file:vendor/release080-064c750d8010/ifsoul-core-0.8.0.tgz
+        specifier: file:vendor/release090-59481141f3cb/ifsoul-core-0.9.0.tgz
+        version: file:vendor/release090-59481141f3cb/ifsoul-core-0.9.0.tgz
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -306,14 +306,14 @@ packages:
       gsap: ^3.12.5
       react: '>=17'
 
-  '@ifsoul/adapter-sdk@file:vendor/release080-09b15a20d5af/ifsoul-adapter-sdk-0.8.0.tgz':
-    resolution: {integrity: sha512-8tSvPzGQaz74qhkXtuh1/v9QzhqgysJBqktq4IjQD6s14UkuKKRaJy3fMT7sGSYDHwTel16L310U/kpkuxbMFQ==, tarball: file:vendor/release080-09b15a20d5af/ifsoul-adapter-sdk-0.8.0.tgz}
-    version: 0.8.0
+  '@ifsoul/adapter-sdk@file:vendor/release090-351fcbf5d832/ifsoul-adapter-sdk-0.9.0.tgz':
+    resolution: {integrity: sha512-s27zgIUv5ZVh5Cd6nEKpEFxPwwjfWtVj66cqu7MnSEPeKx5I+8IaxbTqYW8XUDh3iy5SXfk0CBaFeHnSHlIlpQ==, tarball: file:vendor/release090-351fcbf5d832/ifsoul-adapter-sdk-0.9.0.tgz}
+    version: 0.9.0
     engines: {node: '>=22.18'}
 
-  '@ifsoul/core@file:vendor/release080-064c750d8010/ifsoul-core-0.8.0.tgz':
-    resolution: {integrity: sha512-DbjE9PqTCyLmwLr8Sdtq2ooB+08DHOKN2vKwDfoumiXxLndOHjWcZ+Jf7RhqWtqMO1PTu3dkWxRqk6JX3cD7zA==, tarball: file:vendor/release080-064c750d8010/ifsoul-core-0.8.0.tgz}
-    version: 0.8.0
+  '@ifsoul/core@file:vendor/release090-59481141f3cb/ifsoul-core-0.9.0.tgz':
+    resolution: {integrity: sha512-tZ64MVfNNH0b0kvxgPWKteUm4+IS+DfTuBY8z6ZZ016AfsAk9pqa2NJp7ve3gr0UUEfnP/0YXzVsuvRLPfLntg==, tarball: file:vendor/release090-59481141f3cb/ifsoul-core-0.9.0.tgz}
+    version: 0.9.0
     engines: {node: '>=22.18 <25'}
 
   '@isaacs/nonrecursive-glob-match@1.1.0':
@@ -2043,9 +2043,9 @@ snapshots:
       gsap: 3.15.1
       react: 19.3.1
 
-  '@ifsoul/adapter-sdk@file:vendor/release080-09b15a20d5af/ifsoul-adapter-sdk-0.8.0.tgz': {}
+  '@ifsoul/adapter-sdk@file:vendor/release090-351fcbf5d832/ifsoul-adapter-sdk-0.9.0.tgz': {}
 
-  '@ifsoul/core@file:vendor/release080-064c750d8010/ifsoul-core-0.8.0.tgz':
+  '@ifsoul/core@file:vendor/release090-59481141f3cb/ifsoul-core-0.9.0.tgz':
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)

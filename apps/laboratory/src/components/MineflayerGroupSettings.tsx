@@ -1,3 +1,4 @@
+import { AdventureHistory } from "./AdventureHistory";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import {
@@ -22,6 +23,21 @@ const minecraftName = /^[A-Za-z0-9_]{3,16}$/;
 const playerUuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const axes = ["x", "y", "z"] as const;
+function coordinates(value: string) {
+  const fields = value.trim().split(/[ ,]+/u);
+  if (fields.length !== 3 || fields.some((field) => !/^-?\d{1,8}$/.test(field)))
+    return undefined;
+  const [x, y, z] = fields.map(Number);
+  return { x, y, z };
+}
+const regionFields = [
+  ["travelMinimum", "Travel area minimum"],
+  ["travelMaximum", "Travel area maximum"],
+  ["harvestMinimum", "Harvest area minimum"],
+  ["harvestMaximum", "Harvest area maximum"],
+] as const;
+
 export function MineflayerGroupSettings() {
   const [connections, setConnections] = useState<GameBinding[]>([]);
   const [group, setGroup] = useState<Group | null>(null);
@@ -34,6 +50,16 @@ export function MineflayerGroupSettings() {
   const [player, setPlayer] = useState({ name: "", uuid: "" });
   const [members, setMembers] = useState([blank(), blank()]);
   const [autonomous, setAutonomous] = useState(false);
+  const [publicChat, setPublicChat] = useState(false);
+  const [adventure, setAdventure] = useState(false);
+  const [forest, setForest] = useState({
+    dimension: "overworld",
+    resources: "oak_log",
+    travelMinimum: "",
+    travelMaximum: "",
+    harvestMinimum: "",
+    harvestMaximum: "",
+  });
   const [consent, setConsent] = useState(false);
   const active = group?.state === "connected" || group?.state === "waiting";
   function eligible(rows: GameBinding[]) {
@@ -71,7 +97,10 @@ export function MineflayerGroupSettings() {
       controller.abort();
     };
   }, []);
-  async function change(body: Record<string, unknown>) {
+  async function change(
+    body: Record<string, unknown>,
+    localAdventure?: Record<string, unknown>,
+  ) {
     setBusy(true);
     setMessage("");
     try {
@@ -88,6 +117,7 @@ export function MineflayerGroupSettings() {
                 ifsoul: location.origin,
                 server: body.server,
                 code: snapshot.code,
+                ...(localAdventure && { adventure: localAdventure }),
               },
               null,
               2,
@@ -113,7 +143,38 @@ export function MineflayerGroupSettings() {
   const selected = members.map((m) =>
     connections.find((row) => row.connectionId === m.connectionId),
   );
+  const travelMinimum = coordinates(forest.travelMinimum);
+  const travelMaximum = coordinates(forest.travelMaximum);
+  const harvestMinimum = coordinates(forest.harvestMinimum);
+  const harvestMaximum = coordinates(forest.harvestMaximum);
+  const resources = [...new Set(forest.resources.trim().split(/[ ,]+/u))];
+  const forestPolicy =
+    travelMinimum &&
+    travelMaximum &&
+    harvestMinimum &&
+    harvestMaximum &&
+    /^[a-z][a-z0-9_:-]{0,63}$/u.test(forest.dimension) &&
+    resources.every((item) =>
+      /^(?:oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak)_log$/u.test(
+        item,
+      ),
+    ) &&
+    axes.every(
+      (axis) =>
+        travelMinimum[axis] <= harvestMinimum[axis] &&
+        harvestMinimum[axis] <= harvestMaximum[axis] &&
+        harvestMaximum[axis] <= travelMaximum[axis] &&
+        travelMaximum[axis] - travelMinimum[axis] <= 48,
+    )
+      ? {
+          dimension: forest.dimension,
+          resources,
+          region: { min: travelMinimum, max: travelMaximum },
+          harvestRegion: { min: harvestMinimum, max: harvestMaximum },
+        }
+      : undefined;
   const valid =
+    (!adventure || (members.length === 3 && hasPlayer && forestPolicy)) &&
     /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(server.host) &&
     /^\d+$/.test(server.port) &&
     Number(server.port) >= 1024 &&
@@ -212,8 +273,9 @@ export function MineflayerGroupSettings() {
               value={setup}
             />
             <p className="text-sm text-muted-foreground">
-              Copy into a private JSON file. The code can be used once within
-              five minutes.
+              Save this configuration in a private file and open it with the
+              Mineflayer group runner. The code can be used once within five
+              minutes.
             </p>
           </div>
         )}
@@ -229,14 +291,20 @@ export function MineflayerGroupSettings() {
             onSubmit={(event) => {
               event.preventDefault();
               if (!valid || !consent || busy) return;
-              void change({
-                action: "configure",
-                server: { host: server.host, port: Number(server.port) },
-                members,
-                ...(hasPlayer && { player }),
-                autonomous,
-                consent,
-              });
+              void change(
+                {
+                  action: "configure",
+                  server: { host: server.host, port: Number(server.port) },
+                  members,
+                  ...(hasPlayer && { player }),
+                  autonomous,
+                  publicChat: hasPlayer && publicChat,
+                  consent,
+                },
+                adventure && forestPolicy
+                  ? { forest: forestPolicy, publicChat }
+                  : undefined,
+              );
             }}
           >
             <fieldset className="grid gap-2">
@@ -368,6 +436,18 @@ export function MineflayerGroupSettings() {
                   away. Leave player fields blank to disable group dialogue.
                 </span>
               </label>
+              <label className="flex min-h-11 items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={publicChat}
+                  disabled={!hasPlayer}
+                  onChange={(event) => setPublicChat(event.target.checked)}
+                />
+                <span>
+                  Let these characters respond to the approved player in this
+                  server’s public chat.
+                </span>
+              </label>
               <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
@@ -380,6 +460,75 @@ export function MineflayerGroupSettings() {
                 </span>
               </label>
             </fieldset>
+            <fieldset className="grid gap-3">
+              <legend className="font-medium">Forest adventure</legend>
+              <label className="flex min-h-11 items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={adventure}
+                  onChange={(event) => setAdventure(event.target.checked)}
+                />
+                <span>Enable gathering and return for three characters</span>
+              </label>
+              {adventure && (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Select three members and an approved player. Enter block
+                    coordinates as X Y Z. The harvest area must fit inside the
+                    travel area, which spans at most 48 blocks per axis.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {regionFields.map(([key, label]) => (
+                      <div key={key} className="grid gap-2">
+                        <Label htmlFor={`forest-${key}`}>{label}</Label>
+                        <Input
+                          id={`forest-${key}`}
+                          value={forest[key]}
+                          maxLength={30}
+                          onChange={(event) =>
+                            setForest({ ...forest, [key]: event.target.value })
+                          }
+                        />
+                      </div>
+                    ))}
+                    <div className="grid gap-2">
+                      <Label htmlFor="adventure-dimension">Dimension</Label>
+                      <Input
+                        id="adventure-dimension"
+                        value={forest.dimension}
+                        maxLength={64}
+                        onChange={(event) =>
+                          setForest({
+                            ...forest,
+                            dimension: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="adventure-resources">Log types</Label>
+                      <Input
+                        id="adventure-resources"
+                        value={forest.resources}
+                        maxLength={120}
+                        onChange={(event) =>
+                          setForest({
+                            ...forest,
+                            resources: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                  {!forestPolicy && (
+                    <p className="text-sm text-muted-foreground">
+                      Fill in the four corners and enter log IDs such as oak_log
+                      or spruce_log.
+                    </p>
+                  )}
+                </>
+              )}
+            </fieldset>
             <Button
               className="justify-self-start"
               type="submit"
@@ -390,6 +539,7 @@ export function MineflayerGroupSettings() {
           </form>
         )}
         {message && <p role="status">{message}</p>}
+        <AdventureHistory />
       </CardContent>
     </Card>
   );

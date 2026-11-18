@@ -1,7 +1,7 @@
 {
   "source": "https://github.com/openifsoul/bridge-minecraft-mineflayer",
-  "baseCommit": "d833cd8291a98f307b5cdea0e1c3433f72bfdcf4",
-  "version": "0.8.0",
+  "baseCommit": "14b924e3db6cd7ad3562fbfdd82d40ff9ae263d3",
+  "version": "0.9.0",
   "format": "0.4.0",
-  "sha256": "81b3fbf573e5fe8a3a8552ae08dbf9af043bc71b587af2bf65a91a6d92135d83"
+  "sha256": "887b94407996188eca03b52331c3d3bf497226cf76805fecc9695e131de9d693"
 }

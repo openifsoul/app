@@ -1,6 +1,6 @@
 {
   "name": "@ifsoul/app",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": false,
   "type": "module",
   "description": "Self-hostable IfSoul App and reusable local/cloud UI",
@@ -40,6 +40,7 @@
     "README.md",
     "vendor",
     "dist/server",
+    "dist/web",
     "LICENSES",
     "docs",
     "release.json",
@@ -75,8 +76,8 @@
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "5.3.0",
     "@gsap/react": "2.1.2",
-    "@ifsoul/adapter-sdk": "file:vendor/release080-09b15a20d5af/ifsoul-adapter-sdk-0.8.0.tgz",
-    "@ifsoul/core": "file:vendor/release080-064c750d8010/ifsoul-core-0.8.0.tgz",
+    "@ifsoul/adapter-sdk": "file:vendor/release090-351fcbf5d832/ifsoul-adapter-sdk-0.9.0.tgz",
+    "@ifsoul/core": "file:vendor/release090-59481141f3cb/ifsoul-core-0.9.0.tgz",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "class-variance-authority": "0.7.1",

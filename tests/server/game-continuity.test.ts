@@ -903,6 +903,12 @@ test("linked App projects only durable authenticated outcome receipts, fenced by
       f.store.gameOutcome(access, connection, legacyEvent),
       undefined,
     );
+    assert.deepEqual(
+      f.store.transact(owner, (state) =>
+        state.events.filter((item) => item.eventId === legacyEvent.eventId),
+      ),
+      [legacyEvent],
+    );
     f.db
       .exec(`CREATE TRIGGER reject_receipt_fixture BEFORE INSERT ON participant_game_outcomes
       BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END;`);

@@ -426,7 +426,11 @@ test("profile endpoints require owner session, same origin and provider allowlis
 test("App CSP permits only the fixed consent-protected loopback companion", () => {
   const response = secured(new Response("ok"));
   const csp = response.headers.get("content-security-policy")!;
-  assert(csp.includes("connect-src 'self' http://127.0.0.1:8811;"));
+  assert(
+    csp.includes(
+      "connect-src 'self' http://127.0.0.1:8811 http://127.0.0.1:8812 http://127.0.0.1:8813;",
+    ),
+  );
   assert(
     !csp.includes("http://127.0.0.1:*") && !csp.includes("http://localhost"),
   );

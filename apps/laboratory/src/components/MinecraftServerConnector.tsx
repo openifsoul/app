@@ -1,3 +1,6 @@
+import { Fragment } from "react";
+import { useRuntimeAuth } from "../lib/runtime-auth";
+import { GameCapabilities } from "./GameCapabilities";
 import { desktopBridge } from "../lib/desktop";
 import { useEffect, useState } from "react";
 import {
@@ -10,6 +13,7 @@ import type { ProviderOption } from "../lib/api";
 import {
   createGameConnection,
   readGameConnections,
+  useGameConnectionRefresh,
   readOwnedCharacters,
   revokeGameConnection,
   type CharacterSummary,
@@ -34,9 +38,11 @@ import {
 type Connector = MinecraftTarget["connector"];
 
 export function MinecraftServerConnector({
+  active,
   connector,
   providers,
 }: {
+  active: boolean;
   connector: Connector;
   providers: ProviderOption[];
 }) {
@@ -60,6 +66,13 @@ export function MinecraftServerConnector({
   const desktop = desktopBridge();
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
+  const { userId } = useRuntimeAuth();
+  useGameConnectionRefresh(
+    active && !loading,
+    setConnections,
+    connector,
+    userId,
+  );
   const target = {
     connector,
     playerId: playerId.trim().toLowerCase(),
@@ -94,7 +107,7 @@ export function MinecraftServerConnector({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [connector, reload]);
+  }, [connector, reload, userId]);
 
   async function install() {
     if (!desktop) return;
@@ -369,59 +382,78 @@ export function MinecraftServerConnector({
             </TableHeader>
             <TableBody>
               {connections.map((connection) => (
-                <TableRow key={connection.connectionId}>
-                  <TableCell>{connection.character.name}</TableCell>
-                  <TableCell>
-                    {connection.revoked
-                      ? "Revoked"
-                      : connection.expiresAt <= Date.now()
-                        ? "Expired"
-                        : connection.player
-                          ? "Bridge handshake received"
-                          : "Waiting for bridge handshake"}
-                  </TableCell>
-                  <TableCell>
-                    {availableActions.length === 0 ||
-                    connection.revoked ||
-                    connection.expiresAt <= Date.now()
-                      ? "Unavailable"
-                      : !connection.actions?.length
-                        ? "Disabled by operator"
-                        : !connection.activeActions?.length
-                          ? "Waiting for a compatible bridge"
-                          : connector === "minecraft-minecolonies"
-                            ? "Workplace recall enabled at last connection"
-                            : "Movement enabled at last connection"}
-                  </TableCell>
-                  <TableCell className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={working}
-                      onClick={() => {
-                        setRenewal(connection.connectionId);
-                        setGameplay(false);
-                        setPlayerId(connection.minecraftTarget!.playerId);
-                        setNpcId(connection.minecraftTarget!.npcId);
-                        setCharacter(connection.characterId);
-                        setMemory(connection.memoryId);
-                        setProvider(connection.provider);
-                        setModel(connection.model);
-                        setApproved(false);
-                      }}
-                    >
-                      Renew
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={working || connection.revoked}
-                      onClick={() => void revoke(connection)}
-                    >
-                      Revoke
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <Fragment key={connection.connectionId}>
+                  <TableRow>
+                    <TableCell>{connection.character.name}</TableCell>
+                    <TableCell>
+                      {connection.revoked
+                        ? "Revoked"
+                        : connection.expiresAt <= Date.now()
+                          ? "Expired"
+                          : connection.player
+                            ? "Bridge handshake received"
+                            : "Waiting for bridge handshake"}
+                    </TableCell>
+                    <TableCell>
+                      {availableActions.length === 0 ||
+                      connection.revoked ||
+                      connection.expiresAt <= Date.now()
+                        ? "Unavailable"
+                        : !connection.actions?.length
+                          ? "Disabled by operator"
+                          : !connection.activeActions?.length
+                            ? "Waiting for a compatible bridge"
+                            : connector === "minecraft-minecolonies"
+                              ? "Workplace recall enabled at last connection"
+                              : "Movement enabled at last connection"}
+                    </TableCell>
+                    <TableCell className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={working}
+                        onClick={() => {
+                          setRenewal(connection.connectionId);
+                          setGameplay(false);
+                          setPlayerId(connection.minecraftTarget!.playerId);
+                          setNpcId(connection.minecraftTarget!.npcId);
+                          setCharacter(connection.characterId);
+                          setMemory(connection.memoryId);
+                          setProvider(connection.provider);
+                          setModel(connection.model);
+                          setApproved(false);
+                        }}
+                      >
+                        Renew
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={working || connection.revoked}
+                        onClick={() => void revoke(connection)}
+                      >
+                        Revoke
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell colSpan={4} className="whitespace-normal">
+                      <GameCapabilities
+                        connection={connection}
+                        refresh={async () => setReload((value) => value + 1)}
+                        onUpdate={(updated) =>
+                          setConnections((previous) =>
+                            previous.map((row) =>
+                              row.connectionId === updated.connectionId
+                                ? updated
+                                : row,
+                            ),
+                          )
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                </Fragment>
               ))}
             </TableBody>
           </Table>

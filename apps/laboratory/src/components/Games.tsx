@@ -14,10 +14,12 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
 export function Games({
+  active,
   providers,
   selectedProvider,
   selectedModel,
 }: {
+  active: boolean;
   providers: ProviderOption[];
   selectedProvider: string;
   selectedModel: string;
@@ -162,6 +164,7 @@ export function Games({
         </div>
         {visited && connector === "minecraft-mineflayer" && (
           <GameConnectionSettings
+            active={active && detail}
             providers={providers}
             selectedProvider={selectedProvider}
             selectedModel={selectedModel}
@@ -172,6 +175,7 @@ export function Games({
           config.placement === "local" && <MineflayerGroupSettings />}
         {visited && connector !== "minecraft-mineflayer" && (
           <MinecraftServerConnector
+            active={active && detail}
             key={connector}
             connector={connector}
             providers={providers}

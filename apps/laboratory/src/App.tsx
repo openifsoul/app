@@ -28,6 +28,7 @@ import { Memories } from "./components/Memories";
 import { Games } from "./components/Games";
 import { BillingSettings } from "./components/BillingSettings";
 import { Laboratory } from "./components/Laboratory";
+import { AdventureHistory } from "./components/AdventureHistory";
 import type {
   CharacterDraft,
   CharacterTemplate,
@@ -792,6 +793,7 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
                 </section>
                 <section hidden={section !== "games"} aria-label="Games">
                   <Games
+                    active={section === "games"}
                     providers={status.providers}
                     selectedProvider={provider}
                     selectedModel={selectedModel}
@@ -954,6 +956,9 @@ function WorkspaceApp({ supportUrl }: { supportUrl?: string }) {
                       onSelect={chooseCharacter}
                       onRun={() => run("plan")}
                     />
+                    {auth.config.placement === "local" && (
+                      <AdventureHistory traceOnly />
+                    )}
                   </section>
                 )}
               </>

@@ -6,6 +6,19 @@ import {
   validMinecraftTarget,
   type MinecraftTarget,
 } from "../../shared/src/minecraft-connectors.js";
+import {
+  capabilityAccepts,
+  validCapabilityManifest,
+  validChannelPolicy,
+  type ChannelPolicy,
+  validCapabilityReport,
+  validCapabilityRequest,
+  type CapabilityManifest,
+  type CapabilityReport,
+  type CapabilityRequest,
+  type CapabilitySession,
+} from "@ifsoul/adapter-sdk/bridge";
+import { canonical } from "@ifsoul/core/protocol";
 import { boundedJSON, secured } from "./security.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { PrivateStore, ProviderOption } from "./api.js";
@@ -97,11 +110,53 @@ export interface GameBinding extends ProviderSelection {
   activeActions?: GameAction[];
   player?: { name: string; uuid: string };
   lastSeen?: number;
+  capability?: CapabilitySession;
+  capabilityOffline?: boolean;
+  capabilityRequired?: true;
+  channelPolicyRequired?: true;
+}
+interface CapabilityPolicy {
+  revision: number;
+  worldId: string;
+  embodimentId: string;
+  allowedIntentIds: string[];
+  descriptorKeys: Record<string, string>;
+  channelPolicy?: ChannelPolicy;
+}
+interface CapabilityOperation {
+  request: CapabilityRequest;
+  argumentsKey: string;
+  terminal: boolean;
+  pending: boolean;
+  checkpoint: number;
+  reports: Map<
+    string,
+    { fingerprint: string; late: boolean; persisted: boolean }
+  >;
+}
+interface LiveCapability {
+  providerId: string;
+  manifest: CapabilityManifest;
+  connectionRevision: number;
+  expiresAt: number;
+  operations: Map<string, CapabilityOperation>;
+  group?: true;
+  deliveries?: Map<
+    string,
+    {
+      channel: string;
+      audienceKey: string;
+      authority: string;
+      expiresAt: number;
+    }
+  >;
 }
 interface Stored extends GameBinding {
   codeHash: string;
   codeExpiresAt: number;
   tokenHash?: string;
+  capabilityPolicy?: CapabilityPolicy;
+  capabilityClaims?: string[];
 }
 export interface GameGrant {
   connection: GameBinding;
@@ -114,6 +169,7 @@ export interface GameConnectionPort {
   pair(input: GamePairRequest): Promise<GameGrant>;
   revoke(connectionId: string): Promise<void>;
   history(connectionId: string): Promise<unknown[]>;
+  capabilities?(connectionId: string, input: unknown): Promise<GameBinding>;
 }
 const safeText = (value: unknown, max: number): value is string =>
   typeof value === "string" &&
@@ -149,6 +205,108 @@ export function createGameConnectionBroker(options: {
   };
 }) {
   const now = options.now ?? Date.now;
+  const liveCapabilities = new Map<string, LiveCapability>();
+  const capabilityLeaseMs = 30_000;
+  function live(row: Stored) {
+    const active = liveCapabilities.get(row.connectionId);
+    return active?.connectionRevision === row.revision && !row.revoked
+      ? active
+      : undefined;
+  }
+  function scopeMatches(
+    policy: CapabilityPolicy,
+    manifest: CapabilityManifest,
+  ) {
+    return (
+      policy.worldId === manifest.worldId &&
+      policy.embodimentId === manifest.embodimentId
+    );
+  }
+  function descriptorKey(item: CapabilityManifest["capabilities"][number]) {
+    const { readiness, reason, ...descriptor } = item;
+    return canonical(descriptor);
+  }
+  function validGrantIds(
+    policy: CapabilityPolicy,
+    manifest: CapabilityManifest,
+  ) {
+    if (!scopeMatches(policy, manifest)) return [];
+    return policy.allowedIntentIds.filter((id) =>
+      manifest.capabilities.some(
+        (item) =>
+          item.intentId === id &&
+          descriptorKey(item) === policy.descriptorKeys[id],
+      ),
+    );
+  }
+  function clearChangedGrants(row: Stored, manifest: CapabilityManifest) {
+    const policy = row.capabilityPolicy;
+    if (!policy) return;
+    const validIds = validGrantIds(policy, manifest);
+    const previous = policy.channelPolicy;
+    const channels = (manifest.channels ?? []).map((supported) => {
+      const current = scopeMatches(policy, manifest)
+        ? previous?.channels.find((row) => row.channel === supported.channel)
+        : undefined;
+      return {
+        channel: supported.channel,
+        listen: supported.listen && Boolean(current?.listen),
+        react: supported.react && Boolean(current?.react),
+        speak: supported.speak && Boolean(current?.speak),
+      };
+    });
+    const next = previous && {
+      channels,
+      fallback: scopeMatches(policy, manifest)
+        ? previous.fallback
+        : ("silence" as const),
+    };
+    if (
+      validIds.length !== policy.allowedIntentIds.length ||
+      canonical(previous) !== canonical(next)
+    ) {
+      policy.allowedIntentIds = validIds;
+      policy.channelPolicy = next;
+      policy.revision++;
+    }
+  }
+  function capabilityView(
+    row: Stored,
+    active: LiveCapability,
+  ): CapabilitySession {
+    const policy = row.capabilityPolicy;
+    const channelPolicy =
+      policy && scopeMatches(policy, active.manifest)
+        ? policy.channelPolicy
+        : undefined;
+    const channels = active.manifest.channels?.map((row) => {
+      const grant = channelPolicy?.channels.find(
+        (candidate) => candidate.channel === row.channel,
+      );
+      const defaultAllowed = row.channel === "private";
+      return {
+        channel: row.channel,
+        listen: row.listen && (grant?.listen ?? defaultAllowed),
+        react: row.react && (grant?.react ?? defaultAllowed),
+        speak: row.speak && (grant?.speak ?? defaultAllowed),
+      };
+    });
+    return structuredClone({
+      ...(channels && {
+        channelPolicy: {
+          channels,
+          fallback: row.minecraftTarget
+            ? "silence"
+            : (channelPolicy?.fallback ?? "silence"),
+        },
+      }),
+      providerId: active.providerId,
+      manifest: active.manifest,
+      policyRevision: policy?.revision ?? 0,
+      allowedIntentIds: policy ? validGrantIds(policy, active.manifest) : [],
+      expiresAt: active.expiresAt,
+    });
+  }
   const limits = {
     maxRows: 10000,
     maxActivePerPrincipal: 16,
@@ -196,7 +354,29 @@ export function createGameConnectionBroker(options: {
             !validActions(row.activeActions)) ||
           typeof row.codeHash !== "string" ||
           !Number.isSafeInteger(row.codeExpiresAt) ||
-          (row.tokenHash !== undefined && !/^[a-f0-9]{64}$/.test(row.tokenHash))
+          (row.tokenHash !== undefined &&
+            !/^[a-f0-9]{64}$/.test(row.tokenHash)) ||
+          (row.capabilityClaims !== undefined &&
+            (!Array.isArray(row.capabilityClaims) ||
+              row.capabilityClaims.length > 512 ||
+              !row.capabilityClaims.every(
+                (claim: unknown) =>
+                  typeof claim === "string" && /^[a-f0-9]{64}$/.test(claim),
+              ))) ||
+          (row.capabilityPolicy !== undefined &&
+            (!row.capabilityPolicy ||
+              !Number.isSafeInteger(row.capabilityPolicy.revision) ||
+              row.capabilityPolicy.revision < 1 ||
+              !safe(row.capabilityPolicy.worldId) ||
+              !safe(row.capabilityPolicy.embodimentId) ||
+              !Array.isArray(row.capabilityPolicy.allowedIntentIds) ||
+              !row.capabilityPolicy.allowedIntentIds.every(safe) ||
+              !row.capabilityPolicy.descriptorKeys ||
+              !row.capabilityPolicy.allowedIntentIds.every(
+                (id: string) =>
+                  Object.hasOwn(row.capabilityPolicy.descriptorKeys, id) &&
+                  typeof row.capabilityPolicy.descriptorKeys[id] === "string",
+              )))
         )
           fail("invalid");
       }
@@ -264,8 +444,28 @@ export function createGameConnectionBroker(options: {
     codeHash,
     codeExpiresAt,
     tokenHash,
+    capabilityPolicy,
+    capabilityClaims,
     ...r
-  }: Stored): GameBinding => structuredClone(r);
+  }: Stored): GameBinding => {
+    const active = liveCapabilities.get(r.connectionId);
+    const current =
+      active?.connectionRevision === r.revision && !r.revoked
+        ? active
+        : undefined;
+    return {
+      ...structuredClone(r),
+      ...(current
+        ? {
+            capability: capabilityView(
+              { ...r, codeHash, codeExpiresAt, capabilityPolicy },
+              current,
+            ),
+            capabilityOffline: current.expiresAt <= now(),
+          }
+        : {}),
+    };
+  };
   function lookup(rows: Stored[], token: string) {
     if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token))
       fail("unauthorized");
@@ -274,7 +474,47 @@ export function createGameConnectionBroker(options: {
     if (row.expiresAt <= now()) fail("expired");
     return row;
   }
+  function capabilityActor(rows: Stored[], authority: string | GameBinding) {
+    if (typeof authority === "string") return lookup(rows, authority);
+    const row = rows.find(
+      (entry) =>
+        entry.connectionId === authority.connectionId &&
+        entry.principalId === authority.principalId &&
+        entry.revision === authority.revision,
+    );
+    if (!row || row.revoked || row.expiresAt <= now()) fail("unauthorized");
+    return row;
+  }
   return {
+    publishGroupCapability(
+      binding: GameBinding,
+      player: NonNullable<GameBinding["player"]>,
+      manifest: unknown,
+    ) {
+      if (!validCapabilityManifest(manifest)) fail("invalid");
+      return run((rows) => {
+        const row = capabilityActor(rows, binding);
+        if (
+          row.minecraftTarget ||
+          (row.player && row.player.uuid !== player.uuid)
+        )
+          fail("unauthorized");
+        row.player = player;
+        row.capabilityRequired = true;
+        if (manifest.channels) row.channelPolicyRequired = true;
+        if (row.channelPolicyRequired && !manifest.channels) fail("invalid");
+        clearChangedGrants(row, manifest);
+        liveCapabilities.set(row.connectionId, {
+          providerId: randomUUID(),
+          manifest: structuredClone(manifest),
+          connectionRevision: row.revision,
+          expiresAt: Math.min(row.expiresAt, now() + capabilityLeaseMs),
+          operations: new Map(),
+          group: true,
+        });
+        return view(row);
+      });
+    },
     controlProof(principalId: string) {
       return run(() => {
         if (!safe(principalId)) fail("unauthorized");
@@ -469,6 +709,7 @@ export function createGameConnectionBroker(options: {
         npcId: string;
       },
       actionCapabilities?: unknown,
+      capabilityManifest?: unknown,
     ) {
       return run((rows) => {
         const r = lookup(rows, token);
@@ -518,11 +759,297 @@ export function createGameConnectionBroker(options: {
               ? []
               : active;
         }
+        if (
+          (r.capabilityRequired || capabilityManifest !== undefined) &&
+          !validCapabilityManifest(capabilityManifest)
+        )
+          fail("invalid");
         r.player = { ...player };
         r.revision++;
         r.lastSeen = now();
+        if (capabilityManifest) {
+          r.capabilityRequired = true;
+          if (capabilityManifest.channels) r.channelPolicyRequired = true;
+          if (r.channelPolicyRequired && !capabilityManifest.channels)
+            fail("invalid");
+          for (const [key, entry] of liveCapabilities)
+            if (entry.expiresAt + 30 * 60_000 <= now())
+              liveCapabilities.delete(key);
+          clearChangedGrants(r, capabilityManifest);
+          liveCapabilities.set(r.connectionId, {
+            providerId: randomUUID(),
+            manifest: structuredClone(capabilityManifest),
+            connectionRevision: r.revision,
+            expiresAt: Math.min(r.expiresAt, now() + capabilityLeaseMs),
+            operations: new Map(),
+          });
+        } else liveCapabilities.delete(r.connectionId);
         return view(r);
       });
+    },
+    updateCapabilities(
+      authority: string | GameBinding,
+      providerId: unknown,
+      manifest: unknown,
+    ) {
+      return run((rows) => {
+        const row = capabilityActor(rows, authority);
+        const active = live(row);
+        if (active && Boolean(active.group) !== (typeof authority !== "string"))
+          fail("unauthorized");
+        if (
+          !active ||
+          active.providerId !== providerId ||
+          active.expiresAt <= now()
+        )
+          fail("unauthorized");
+        if (
+          !validCapabilityManifest(manifest) ||
+          manifest.worldId !== active.manifest.worldId ||
+          manifest.embodimentId !== active.manifest.embodimentId
+        )
+          fail("invalid");
+        if (manifest.revision === active.manifest.revision) {
+          if (canonical(manifest) !== canonical(active.manifest))
+            fail("conflict");
+        } else {
+          if (Number(manifest.revision) <= Number(active.manifest.revision))
+            fail("conflict");
+          if (manifest.channels) row.channelPolicyRequired = true;
+          if (row.channelPolicyRequired && !manifest.channels) fail("invalid");
+          clearChangedGrants(row, manifest);
+          active.manifest = structuredClone(manifest);
+        }
+        active.expiresAt = Math.min(row.expiresAt, now() + capabilityLeaseMs);
+        return view(row);
+      });
+    },
+    setCapabilityPolicy(
+      principalId: string,
+      connectionId: string,
+      input: unknown,
+    ) {
+      return run((rows) => {
+        const row = rows.find(
+          (r) =>
+            r.connectionId === connectionId && r.principalId === principalId,
+        );
+        if (!row) fail("unauthorized");
+        const active = live(row);
+        if (!active || active.expiresAt <= now()) fail("expired");
+        const body = input as {
+          providerId?: unknown;
+          manifestRevision?: unknown;
+          policyRevision?: unknown;
+          allowedIntentIds?: unknown;
+          channelPolicy?: unknown;
+        } | null;
+        if (
+          !body ||
+          typeof body !== "object" ||
+          Object.keys(body).some(
+            (key) =>
+              ![
+                "providerId",
+                "manifestRevision",
+                "policyRevision",
+                "allowedIntentIds",
+                "channelPolicy",
+              ].includes(key),
+          ) ||
+          !Array.isArray(body.allowedIntentIds) ||
+          body.allowedIntentIds.length > 48 ||
+          new Set(body.allowedIntentIds).size !==
+            body.allowedIntentIds.length ||
+          body.allowedIntentIds.some(
+            (id) =>
+              !active.manifest.capabilities.some(
+                (item) =>
+                  item.intentId === id && item.support !== "unsupported",
+              ),
+          )
+        )
+          fail("invalid");
+        const policy = capabilityView(row, active);
+        if (
+          body.providerId !== policy.providerId ||
+          body.manifestRevision !== policy.manifest.revision ||
+          body.policyRevision !== policy.policyRevision
+        )
+          fail("conflict");
+        if (
+          body.channelPolicy !== undefined &&
+          (!validChannelPolicy(body.channelPolicy) ||
+            (row.minecraftTarget &&
+              body.channelPolicy.fallback !== "silence") ||
+            !active.manifest.channels ||
+            body.channelPolicy.channels.some((requested) => {
+              const supported = active.manifest.channels?.find(
+                (row) => row.channel === requested.channel,
+              );
+              return (
+                !supported ||
+                (requested.listen && !supported.listen) ||
+                (requested.react && !supported.react) ||
+                (requested.speak && !supported.speak)
+              );
+            }))
+        )
+          fail("invalid");
+        const previousChannels =
+          row.capabilityPolicy &&
+          scopeMatches(row.capabilityPolicy, active.manifest)
+            ? row.capabilityPolicy.channelPolicy
+            : undefined;
+        row.capabilityPolicy = {
+          channelPolicy: body.channelPolicy ?? previousChannels,
+          revision: policy.policyRevision + 1,
+          worldId: active.manifest.worldId,
+          embodimentId: active.manifest.embodimentId,
+          allowedIntentIds: [...body.allowedIntentIds],
+          descriptorKeys: Object.fromEntries(
+            active.manifest.capabilities
+              .filter((item) =>
+                (body.allowedIntentIds as string[]).includes(item.intentId),
+              )
+              .map((item) => [item.intentId, descriptorKey(item)]),
+          ),
+        };
+        return view(row);
+      });
+    },
+    authorizeCapability(
+      authority: string | GameBinding,
+      input: CapabilityRequest,
+    ) {
+      const accepted = run((rows) => {
+        const row = capabilityActor(rows, authority);
+        const active = live(row);
+        if (active && Boolean(active.group) !== (typeof authority !== "string"))
+          fail("unauthorized");
+        if (
+          !active ||
+          active.expiresAt <= now() ||
+          active.providerId !== input.providerId
+        )
+          fail("unauthorized");
+        const policy = capabilityView(row, active);
+        const descriptor = policy.manifest.capabilities.find(
+          (item) => item.intentId === input.intentId,
+        );
+        if (
+          policy.manifest.revision !== input.manifestRevision ||
+          policy.policyRevision !== input.policyRevision ||
+          !policy.allowedIntentIds.includes(input.intentId) ||
+          !descriptor ||
+          !capabilityAccepts(descriptor, input)
+        )
+          fail("unauthorized");
+        const argumentsKey = canonical(
+          Object.fromEntries(
+            input.arguments.map(({ name, value }) => [name, value]),
+          ),
+        );
+        const existing = active.operations.get(input.id);
+        if (existing) {
+          if (
+            existing.terminal ||
+            existing.pending ||
+            existing.argumentsKey !== argumentsKey ||
+            existing.request.intentId !== input.intentId ||
+            existing.request.manifestRevision !== input.manifestRevision ||
+            existing.request.policyRevision !== input.policyRevision ||
+            input.checkpoint !== existing.checkpoint + 1
+          )
+            fail("conflict");
+          return { operation: existing, active, revision: row.revision };
+        }
+        const claim = hash(
+          canonical([
+            row.principalId,
+            active.manifest.worldId,
+            active.manifest.embodimentId,
+            input.id,
+          ]),
+        );
+        const claims = (row.capabilityClaims ??= []);
+        if (
+          input.checkpoint !== 1 ||
+          claims.length >= 512 ||
+          rows.some(
+            (candidate) =>
+              candidate.principalId === row.principalId &&
+              candidate.capabilityClaims?.includes(claim),
+          )
+        )
+          fail("conflict");
+        claims.push(claim);
+        const operation: CapabilityOperation = {
+          request: structuredClone(input),
+          argumentsKey,
+          terminal: false,
+          pending: false,
+          reports: new Map(),
+          checkpoint: 1,
+        };
+        return { operation, active, revision: row.revision };
+      });
+      accepted.operation.checkpoint = input.checkpoint;
+      accepted.active.operations.set(input.id, accepted.operation);
+      return { authorized: true, revision: accepted.revision };
+    },
+    async reportCapability(
+      authority: string | GameBinding,
+      report: CapabilityReport,
+      execute: (
+        binding: GameBinding,
+        body: Record<string, unknown>,
+      ) => Promise<unknown>,
+    ) {
+      const accepted = run((rows) => {
+        const row = capabilityActor(rows, authority);
+        const active = live(row);
+        if (active && Boolean(active.group) !== (typeof authority !== "string"))
+          fail("unauthorized");
+        const operation = active?.operations.get(report.id);
+        if (
+          !active ||
+          active.providerId !== report.providerId ||
+          !operation ||
+          operation.request.intentId !== report.intentId
+        )
+          fail("unauthorized");
+        const fingerprint = canonical(report);
+        const existing = operation.reports.get(report.reportId);
+        if (existing?.fingerprint === fingerprint && existing.persisted) return;
+        if (
+          (existing && existing.fingerprint !== fingerprint) ||
+          operation.pending ||
+          (!existing && operation.reports.size >= 64)
+        )
+          fail("conflict");
+        const policy = capabilityView(row, active);
+        const late =
+          existing?.late ??
+          (operation.terminal ||
+            active.expiresAt <= now() ||
+            operation.request.manifestRevision !== active.manifest.revision ||
+            operation.request.policyRevision !== policy.policyRevision);
+        const receipt = existing ?? { fingerprint, late, persisted: false };
+        return { operation, receipt, binding: view(row), late };
+      });
+      if (!accepted) return { ok: true };
+      const { operation, receipt, binding, late } = accepted;
+      operation.reports.set(report.reportId, receipt);
+      if (late || report.status !== "progress") operation.terminal = true;
+      operation.pending = true;
+      try {
+        await execute(binding, { operation: "action-report", ...report, late });
+        receipt.persisted = true;
+        return { ok: true };
+      } finally {
+        operation.pending = false;
+      }
     },
     setInspection(token: string, allowed: boolean) {
       return run((rows) => {
@@ -577,6 +1104,67 @@ export function createGameConnectionBroker(options: {
         return view(row);
       });
     },
+    sharedDelivery(
+      token: string,
+      body: Record<string, unknown>,
+      issue = false,
+    ) {
+      return run((rows) => {
+        const row = lookup(rows, token);
+        const active = live(row);
+        const channel = body.channel;
+        if (
+          !row.minecraftTarget ||
+          !active ||
+          active.expiresAt <= now() ||
+          (channel !== "group" && channel !== "public") ||
+          !safe(body.requestId) ||
+          typeof body.audienceKey !== "string" ||
+          !/^[a-f0-9]{64}$/.test(body.audienceKey)
+        )
+          fail("unauthorized");
+        const current = capabilityView(row, active);
+        const policy = current.channelPolicy?.channels.find(
+          (item) => item.channel === channel,
+        );
+        if (!policy?.listen || !policy.react || !policy.speak)
+          fail("unauthorized");
+        const authority = {
+          providerId: current.providerId,
+          manifestRevision: current.manifest.revision,
+          policyRevision: current.policyRevision,
+        };
+        if (
+          body.providerId !== authority.providerId ||
+          body.manifestRevision !== authority.manifestRevision ||
+          body.policyRevision !== authority.policyRevision
+        )
+          fail("conflict");
+        const deliveries = (active.deliveries ??= new Map());
+        const prior = deliveries.get(body.requestId);
+        if (issue) {
+          if (prior || deliveries.size >= 512) fail("conflict");
+          deliveries.set(body.requestId, {
+            channel,
+            audienceKey: body.audienceKey,
+            authority: canonical(authority),
+            expiresAt: now() + 5000,
+          });
+        } else {
+          if (
+            !prior ||
+            prior.channel !== channel ||
+            prior.audienceKey !== body.audienceKey ||
+            prior.authority !== canonical(authority) ||
+            prior.expiresAt < now()
+          )
+            fail("conflict");
+          // Keep a tombstone so a replay cannot recreate the delivery right.
+          prior.expiresAt = 0;
+        }
+        return authority;
+      });
+    },
     current(binding: GameBinding) {
       return run((rows) => {
         const r = rows.find(
@@ -605,6 +1193,7 @@ export function createGameConnectionBroker(options: {
           options.store.delete(continuityKey(id));
           r.revoked = true;
           r.revision++;
+          liveCapabilities.delete(id);
         }
         return view(r);
       });
@@ -699,6 +1288,7 @@ export async function gameDeviceRequest(
         "/api/game/device/redeem",
         "/api/game/device/ready",
         "/api/game/device/dialogue",
+        "/api/game/device/capabilities",
         "/api/game/device/revoke",
         "/api/game/device/owner-proof",
         "/api/game/device/history-consent",
@@ -708,7 +1298,12 @@ export async function gameDeviceRequest(
       return new Response(null, { status: 404 });
     if (!request.headers.get("content-type")?.startsWith("application/json"))
       fail("invalid");
-    const body = (await boundedJSON(request, 8192)) as Record<string, any>;
+    const body = (await boundedJSON(
+      request,
+      ["/api/game/device/ready", "/api/game/device/capabilities"].includes(path)
+        ? 24_576
+        : 8192,
+    )) as Record<string, any>;
     if (!body || typeof body !== "object" || Array.isArray(body))
       fail("invalid");
     if (new URL(request.url).pathname.endsWith("/redeem")) {
@@ -722,7 +1317,13 @@ export async function gameDeviceRequest(
     if (new URL(request.url).pathname.endsWith("/ready")) {
       if (
         Object.keys(body).some(
-          (k) => !["player", "minecraft", "actionCapabilities"].includes(k),
+          (k) =>
+            ![
+              "player",
+              "minecraft",
+              "actionCapabilities",
+              "capabilityManifest",
+            ].includes(k),
         )
       )
         fail("invalid");
@@ -732,6 +1333,22 @@ export async function gameDeviceRequest(
           body.player,
           body.minecraft,
           body.actionCapabilities,
+          body.capabilityManifest,
+        ),
+      });
+    }
+    if (path === "/api/game/device/capabilities") {
+      if (
+        Object.keys(body).some(
+          (key) => !["providerId", "capabilityManifest"].includes(key),
+        )
+      )
+        fail("invalid");
+      return reply({
+        connection: broker.updateCapabilities(
+          token,
+          body.providerId,
+          body.capabilityManifest,
         ),
       });
     }
@@ -765,18 +1382,125 @@ export async function gameDeviceRequest(
       return reply({ ok: true });
     }
     if (path !== "/api/game/device/dialogue") fail("invalid");
+    if (body.operation === "action-check" && Object.keys(body).length > 1) {
+      const { operation, ...input } = body;
+      if (!validCapabilityRequest(input)) fail("invalid");
+      return reply(broker.authorizeCapability(token, input));
+    }
+    if (body.operation === "action-report") {
+      const { operation, ...input } = body;
+      if (!validCapabilityReport(input)) fail("invalid");
+      return reply(await broker.reportCapability(token, input, execute));
+    }
+    if (
+      binding.capabilityRequired &&
+      (body.operation === "action-check" || body.operation === "action-outcome")
+    )
+      fail("unauthorized");
+    if (body.operation === "channel-delivery-check") {
+      if (
+        Object.keys(body).some(
+          (key) =>
+            ![
+              "operation",
+              "requestId",
+              "channel",
+              "audienceKey",
+              "providerId",
+              "manifestRevision",
+              "policyRevision",
+            ].includes(key),
+        )
+      )
+        fail("invalid");
+      broker.sharedDelivery(token, body);
+      return reply({ authorized: true });
+    }
+    if (body.channel !== undefined) {
+      if (
+        !binding.minecraftTarget ||
+        Object.keys(body).some(
+          (key) =>
+            !["requestId", "text", "channel", "audienceKey"].includes(key),
+        ) ||
+        !safe(body.requestId) ||
+        !safeText(body.text, 500) ||
+        (body.channel !== "group" && body.channel !== "public") ||
+        typeof body.audienceKey !== "string" ||
+        !/^[a-f0-9]{64}$/.test(body.audienceKey)
+      )
+        fail("invalid");
+      const snapshot = binding.capability;
+      const permission = snapshot?.channelPolicy?.channels.find(
+        (row) => row.channel === body.channel,
+      );
+      if (!snapshot || binding.capabilityOffline || !permission?.listen)
+        return reply({ unavailable: true, reason: "channel-policy" });
+      const silent = !permission.react || !permission.speak;
+      const result = await execute(binding, {
+        ...body,
+        ...(silent && { suppressDialogue: true }),
+      });
+      if (
+        silent ||
+        !result ||
+        typeof result !== "object" ||
+        !("speech" in result) ||
+        typeof result.speech !== "string" ||
+        !result.speech
+      )
+        return reply({ unavailable: true, reason: "channel-policy" });
+      broker.current(binding);
+      const authority = broker.sharedDelivery(
+        token,
+        {
+          ...body,
+          providerId: snapshot.providerId,
+          manifestRevision: snapshot.manifest.revision,
+          policyRevision: snapshot.policyRevision,
+        },
+        true,
+      );
+      return reply({ ...result, destination: body.channel, authority });
+    }
+    const privatePolicy = binding.capability?.channelPolicy?.channels.find(
+      (row) => row.channel === "private",
+    );
+    if (
+      (body.operation === undefined || body.operation === "decide") &&
+      binding.channelPolicyRequired &&
+      (binding.capabilityOffline || !privatePolicy?.listen)
+    )
+      return reply({ unavailable: true, reason: "channel-policy" });
     const currentActions = binding.activeActions?.filter(
       (action) =>
         binding.actions?.includes(action) &&
         profileActions(binding.minecraftTarget).includes(action),
     );
-    const allowed = (id: string) =>
-      id === "none" ||
-      (bridgeChoiceIds[
-        binding.minecraftTarget?.connector ?? "minecraft-mineflayer"
-      ].includes(id) &&
-        currentActions?.includes(actionIds[id]));
-    if (body.operation !== undefined && !currentActions?.length)
+    const allowed = (id: string) => {
+      if (id === "none") return true;
+      if (
+        !bridgeChoiceIds[
+          binding.minecraftTarget?.connector ?? "minecraft-mineflayer"
+        ].includes(id)
+      )
+        return false;
+      if (!binding.capabilityRequired)
+        return currentActions?.includes(actionIds[id]) ?? false;
+      const intentId = `minecraft.${id}`;
+      return (
+        !binding.capabilityOffline &&
+        binding.capability?.allowedIntentIds.includes(intentId) &&
+        binding.capability.manifest.capabilities.some(
+          (item) => item.intentId === intentId && item.readiness === "ready",
+        )
+      );
+    };
+    if (
+      body.operation !== undefined &&
+      !binding.capabilityRequired &&
+      !currentActions?.length
+    )
       fail("unauthorized");
     if (body.operation === "action-check") {
       if (Object.keys(body).length !== 1) fail("invalid");
@@ -826,10 +1550,26 @@ export async function gameDeviceRequest(
           fail("invalid");
       }
     }
-    const result = await execute(binding, body);
-    broker.current(binding);
+    const suppressDialogue =
+      binding.capability?.channelPolicy &&
+      (!privatePolicy?.react || !privatePolicy.speak);
+    const result = await execute(
+      binding,
+      suppressDialogue ? { ...body, suppressDialogue: true } : body,
+    );
+    const latest = broker.current(binding);
+    if (
+      binding.capability?.channelPolicy &&
+      (latest.capabilityOffline ||
+        latest.capability?.providerId !== binding.capability.providerId ||
+        latest.capability.policyRevision !==
+          binding.capability.policyRevision ||
+        latest.capability.manifest.revision !==
+          binding.capability.manifest.revision)
+    )
+      return reply({ unavailable: true, reason: "channel-policy" });
     return reply(result);
-  } catch {
+  } catch (error) {
     return reply(
       {
         error: {
@@ -838,7 +1578,12 @@ export async function gameDeviceRequest(
             "Reconnect or ask the service owner to review this connection.",
         },
       },
-      { status: 403 },
+      {
+        status:
+          error instanceof GameConnectionError && error.code === "conflict"
+            ? 409
+            : 403,
+      },
     );
   }
 }
